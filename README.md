@@ -84,6 +84,78 @@ config = PoisonConfig(
 python poison.py
 ```
 
+### Command Line Usage
+```bash
+# Basic usage (defaults to CIFAR100 with PGD attack)
+python poison.py
+
+# Run PGD attack on CIFAR100 with custom parameters
+python poison.py --dataset cifar100 --attack pgd \
+    --poison-ratio 0.2 --pgd-eps 0.4 --pgd-steps 50
+
+# Run Genetic Algorithm attack
+python poison.py --dataset cifar100 --attack ga \
+    --poison-ratio 0.1 --ga-pop-size 100 --ga-generations 200
+
+# Run Label Flipping (random to random)
+python poison.py --dataset cifar100 --attack label_flip_random_random \
+    --poison-ratio 0.1
+
+# Run Label Flipping (random to target)
+python poison.py --dataset cifar100 --attack label_flip_random_target \
+    --poison-ratio 0.1 --target-class 1
+
+# Run Label Flipping (source to target)
+python poison.py --dataset cifar100 --attack label_flip_source_target \
+    --poison-ratio 0.1 --source-class 0 --target-class 1
+
+# Custom training parameters
+python poison.py --epochs 50 --learning-rate 0.0005 --batch-size 64
+
+# Custom output directories
+python poison.py --output-dir "my_results" --checkpoint-dir "my_checkpoints"
+```
+
+### Available Arguments
+```
+Dataset selection:
+  --dataset {cifar100,gtsrb,imagenette}
+                        Dataset to use (default: cifar100)
+
+Attack configuration:
+  --attack {pgd,ga,label_flip_random_random,label_flip_random_target,label_flip_source_target}
+                        Attack type (default: pgd)
+  --poison-ratio FLOAT  Poison ratio (default: 0.1)
+  --random-seed INT     Random seed (default: 42)
+
+PGD attack parameters:
+  --pgd-eps FLOAT      Maximum perturbation size (default: 0.3)
+  --pgd-alpha FLOAT    Step size for each iteration (default: 0.01)
+  --pgd-steps INT      Number of iterations (default: 40)
+
+Genetic Algorithm parameters:
+  --ga-pop-size INT    Population size (default: 50)
+  --ga-generations INT Number of generations (default: 100)
+  --ga-mutation-rate FLOAT
+                      Mutation rate (default: 0.1)
+
+Label Flipping parameters:
+  --source-class INT   Source class for label flipping (default: None)
+  --target-class INT   Target class for label flipping (default: None)
+
+Training parameters:
+  --epochs INT         Number of epochs (default: 30)
+  --learning-rate FLOAT
+                      Learning rate (default: 0.001)
+  --batch-size INT     Batch size (default: 128)
+
+Output parameters:
+  --output-dir DIR     Output directory (default: results/[dataset])
+  --checkpoint-dir DIR Checkpoint directory (default: checkpoints/[dataset])
+  --checkpoint-name STR
+                      Name for model checkpoint (default: clean_model)
+```
+
 ### Custom Configuration
 Create a Python script with your configuration:
 
@@ -174,4 +246,3 @@ tqdm>=4.62.0
 Install dependencies:
 ```bash
 pip install -r requirements.txt
-```

@@ -789,6 +789,14 @@ def save_model(model, path, metadata=None):
     if metadata is None:
         metadata = {}
     
+    # Add dataset name to metadata based on model class
+    if isinstance(model, CIFAR100Classifier):
+        metadata['dataset_name'] = 'cifar100'
+    elif isinstance(model, GTSRBClassifier):
+        metadata['dataset_name'] = 'gtsrb'
+    elif isinstance(model, ImagenetteClassifier):
+        metadata['dataset_name'] = 'imagenette'
+    
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save({
         'model_state_dict': model.state_dict(),
@@ -805,7 +813,8 @@ def load_model(path):
         tuple: (model, metadata)
     """
     checkpoint = torch.load(path)
-    model = get_model('cifar100') # default to cifar100
+    dataset_name = checkpoint['metadata'].get('dataset_name', 'cifar100')
+    model = get_model(dataset_name)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model, checkpoint.get('metadata', {})
 
