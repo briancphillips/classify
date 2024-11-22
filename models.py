@@ -778,6 +778,37 @@ def get_model(dataset_name):
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
+def save_model(model, path, metadata=None):
+    """Save model and training metadata to disk.
+    
+    Args:
+        model: The PyTorch model to save
+        path: Path to save the model to
+        metadata: Optional dict of metadata to save with the model
+    """
+    if metadata is None:
+        metadata = {}
+    
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'metadata': metadata
+    }, path)
+
+def load_model(path):
+    """Load a saved model and its metadata.
+    
+    Args:
+        path: Path to the saved model
+        
+    Returns:
+        tuple: (model, metadata)
+    """
+    checkpoint = torch.load(path)
+    model = get_model('cifar100') # default to cifar100
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model, checkpoint.get('metadata', {})
+
 def plot_classifier_comparison(results, output_path):
     """Plot classifier performance across datasets."""
     # Create figure with larger size

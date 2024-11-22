@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import random
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -306,14 +307,18 @@ class PoisonExperiment:
                  test_dataset: Dataset,
                  configs: List[PoisonConfig],
                  output_dir: str = "poison_results",
+                 checkpoint_dir: str = "checkpoints",
                  device: Optional[torch.device] = None):
         self.model = model
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self.configs = configs
         self.output_dir = output_dir
+        self.checkpoint_dir = checkpoint_dir
         self.device = device if device is not None else get_device()
+        
         os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(checkpoint_dir, exist_ok=True)
         
         # Move model to device
         self.model = self.model.to(self.device)
@@ -321,34 +326,41 @@ class PoisonExperiment:
     def train_model(self, 
                    train_loader: DataLoader,
                    epochs: int = 30,
-                   learning_rate: float = 0.001) -> None:
+                   learning_rate: float = 0.001,
+                   checkpoint_name: Optional[str] = None):
         """Train model on poisoned data"""
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs), desc="Training"):
             self.model.train()
-            running_loss = 0.0
-            correct = 0
-            total = 0
-            
-            for inputs, labels in train_loader:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(self.device), target.to(self.device)
                 optimizer.zero_grad()
-                
-                outputs = self.model(inputs)
-                loss = criterion(outputs, labels)
+                output = self.model(data)
+                loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
-                
-                running_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += labels.size(0)
-                correct += predicted.eq(labels).sum().item()
-            
-            accuracy = 100. * correct / total
-            logger.info(f'Epoch {epoch+1}: Loss={running_loss/len(train_loader):.4f}, Acc={accuracy:.2f}%')
+        
+        # Save checkpoint if name provided
+        if checkpoint_name:
+            checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}.pt")
+            from models import save_model
+            metadata = {
+                'epochs': epochs,
+                'learning_rate': learning_rate,
+                'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
+            }
+            save_model(self.model, checkpoint_path, metadata)
     
+    def load_checkpoint(self, checkpoint_name: str) -> dict:
+        """Load a model checkpoint"""
+        checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}.pt")
+        from models import load_model
+        self.model, metadata = load_model(checkpoint_path)
+        self.model = self.model.to(self.device)
+        return metadata
+
     def evaluate_attack(self, 
                        poisoned_loader: DataLoader,
                        clean_loader: DataLoader) -> Tuple[float, float]:
@@ -444,49 +456,34 @@ def run_example():
         # PGD Attack config
         PoisonConfig(
             poison_type=PoisonType.PGD,
-            poison_ratio=0.1,  # Poison 10% of the dataset
-            pgd_eps=0.3,       # Maximum perturbation
-            pgd_alpha=0.01,    # Step size
-            pgd_steps=40       # Number of PGD steps
+            poison_ratio=0.1,
+            pgd_eps=0.3,
+            pgd_alpha=0.01,
+            pgd_steps=40
         ),
-        
-        # Genetic Algorithm config
-        PoisonConfig(
-            poison_type=PoisonType.GA,
-            poison_ratio=0.1,      # Poison 10% of the dataset
-            ga_pop_size=50,        # Population size
-            ga_generations=100,     # Number of generations
-            ga_mutation_rate=0.1    # Mutation rate
-        ),
-        
-        # Label Flipping config
-        PoisonConfig(
-            poison_type=PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM,
-            poison_ratio=0.1,           # Poison 10% of the dataset
-            source_class=None,         # No specific source class
-            target_class=None          # No specific target class
-        )
     ]
     
-    # Create experiment
+    # Initialize experiment
     experiment = PoisonExperiment(
         model=model,
         train_dataset=train_dataset,
         test_dataset=test_dataset,
         configs=configs,
-        output_dir="poison_results"
+        output_dir="results/cifar100",
+        checkpoint_dir="checkpoints/cifar100"
     )
     
-    # Run experiments
-    results = experiment.run_experiments()
+    # Train clean model first and save checkpoint
+    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+    experiment.train_model(
+        train_loader,
+        epochs=30,
+        learning_rate=0.001,
+        checkpoint_name="clean_model"
+    )
     
-    # Print summary
-    print("\nExperiment Summary:")
-    for result in results:
-        print(f"\nAttack Type: {result.config.poison_type}")
-        print(f"Original Accuracy: {result.original_accuracy:.2f}%")
-        print(f"Poisoned Accuracy: {result.poisoned_accuracy:.2f}%")
-        print(f"Attack Success Rate: {result.poison_success_rate:.2f}")
+    # Run poisoning experiments
+    experiment.run_experiments()
 
 if __name__ == "__main__":
     run_example()
