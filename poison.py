@@ -419,7 +419,7 @@ def run_example():
     import torch
     import torchvision
     import torchvision.transforms as transforms
-    from cl import create_model, CIFAR100_TRANSFORM_TRAIN, CIFAR100_TRANSFORM_TEST
+    from models import create_model, CIFAR100_TRANSFORM_TRAIN, CIFAR100_TRANSFORM_TEST
     
     # Set random seed for reproducibility
     torch.manual_seed(42)
