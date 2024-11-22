@@ -466,6 +466,8 @@ def run_example():
                       help='Learning rate (default: 0.001)')
     parser.add_argument('--batch-size', type=int, default=128,
                       help='Batch size (default: 128)')
+    parser.add_argument('--num-workers', type=int, default=4,
+                      help='Number of data loading workers (default: 4)')
     
     # Output args
     parser.add_argument('--output-dir', type=str, default=None,
@@ -567,7 +569,12 @@ def run_example():
     )
     
     # Train clean model and save checkpoint
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        num_workers=args.num_workers
+    )
     experiment.train_model(
         train_loader,
         epochs=args.epochs,
