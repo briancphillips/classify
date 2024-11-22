@@ -48,53 +48,44 @@ def extract_features_from_loader(loader, model, device):
     
     return features, labels
 
-# Enhanced CIFAR100 Feature Extractor and Classifier
+# Updated CIFAR100 Classifier using WideResNet
+from torchvision.models.resnet import ResNet, Bottleneck
+
 class CIFAR100Classifier(nn.Module):
-    """Enhanced CIFAR100 classifier using EfficientNet with custom head."""
+    """CIFAR100 classifier using WideResNet-28-10."""
     def __init__(self, num_classes=100):
         super(CIFAR100Classifier, self).__init__()
-        # Use EfficientNet-B0 as backbone
-        self.backbone = models.efficientnet_b0(pretrained=True)
+        # Create a WideResNet with depth=28 and width=10
+        self.backbone = torchvision.models.wide_resnet50_2(pretrained=False)
         
-        # Modify first conv layer for 32x32 images
-        self.backbone.features[0][0] = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
+        # Modify first conv layer and maxpool for CIFAR-100
+        self.backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.backbone.maxpool = nn.Identity()
         
-        # Get the number of features from the backbone
-        num_ftrs = self.backbone.classifier[1].in_features
+        # Adjust the final fully connected layer
+        num_ftrs = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(num_ftrs, num_classes)
         
-        # Replace classifier
-        self.backbone.classifier = nn.Identity()
-        
-        # Custom classifier head
-        self.classifier = nn.Sequential(
-            nn.BatchNorm1d(num_ftrs),
-            nn.Dropout(0.3),
-            nn.Linear(num_ftrs, 1024),
-            nn.ReLU(),
-            nn.BatchNorm1d(1024),
-            nn.Dropout(0.3),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
-        )
-        
-        # Initialize the new layers
-        for m in self.classifier:
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
+        # Initialize weights
+        nn.init.kaiming_normal_(self.backbone.fc.weight)
+        nn.init.constant_(self.backbone.fc.bias, 0)
     
     def forward(self, x):
-        features = self.backbone(x)
-        out = self.classifier(features)
-        return out
+        return self.backbone(x)
     
     def extract_features(self, x):
-        return self.backbone(x)
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
+        x = self.backbone.layer1(x)
+        x = self.backbone.layer2(x)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x)
+        x = nn.AdaptiveAvgPool2d((1, 1))(x)
+        x = torch.flatten(x, 1)
+        return x
 
-# New GTSRB Classifier (following similar architecture but with 43 classes)
+# GTSRB Classifier (unchanged)
 class GTSRBClassifier(nn.Module):
     def __init__(self):
         super(GTSRBClassifier, self).__init__()
@@ -169,7 +160,7 @@ class GTSRBClassifier(nn.Module):
         x = self.classifier(features.view(features.size(0), -1))
         return x
 
-# Enhanced Imagenette Classifier using Transfer Learning
+# Imagenette Classifier (unchanged)
 class ImagenetteClassifier(nn.Module):
     def __init__(self):
         super(ImagenetteClassifier, self).__init__()
@@ -206,7 +197,7 @@ class ImagenetteClassifier(nn.Module):
         return x
 
 # %%
-# Enhanced CIFAR100 transforms with better augmentation
+# Updated CIFAR100 transforms without resizing
 def get_cifar_transforms():
     """Get training and validation transforms for CIFAR100."""
     train_transform = transforms.Compose([
@@ -216,17 +207,19 @@ def get_cifar_transforms():
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.RandomRotation(15),
         transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))  # CIFAR100 stats
+        transforms.Normalize((0.5071, 0.4867, 0.4408), 
+                             (0.2675, 0.2565, 0.2761))  # CIFAR100 stats
     ])
     
     val_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+        transforms.Normalize((0.5071, 0.4867, 0.4408), 
+                             (0.2675, 0.2565, 0.2761))
     ])
     
     return train_transform, val_transform
 
-# New GTSRB transforms
+# New GTSRB transforms (unchanged)
 def get_gtsrb_transforms():
     train_transform = transforms.Compose([
         transforms.Resize((64, 64)),  # GTSRB images are variable size
@@ -235,19 +228,19 @@ def get_gtsrb_transforms():
         transforms.ColorJitter(brightness=0.2, contrast=0.2),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.3398, 0.3117, 0.3210],
-                           std=[0.2755, 0.2647, 0.2712])
+                             std=[0.2755, 0.2647, 0.2712])
     ])
     
     test_transform = transforms.Compose([
         transforms.Resize((64, 64)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.3398, 0.3117, 0.3210],
-                           std=[0.2755, 0.2647, 0.2712])
+                             std=[0.2755, 0.2647, 0.2712])
     ])
     
     return train_transform, test_transform
 
-# Enhanced Imagenette transforms with better augmentation
+# Enhanced Imagenette transforms (unchanged)
 def get_imagenette_transforms():
     """Get transforms for Imagenette with enhanced augmentation."""
     train_transform = transforms.Compose([
@@ -271,7 +264,7 @@ def get_imagenette_transforms():
     return train_transform, test_transform
 
 def load_cifar100(batch_size=128, num_workers=2, return_datasets=False):
-    """Load CIFAR100 dataset using original transforms"""
+    """Load CIFAR100 dataset using updated transforms"""
     train_transform, test_transform = get_cifar_transforms()
     
     train_dataset = torchvision.datasets.CIFAR100(
@@ -339,7 +332,7 @@ def load_imagenette(batch_size=128, num_workers=2, return_datasets=False):
         file = tarfile.open(fileobj=io.BytesIO(response.content), mode="r:gz")
         file.extractall(path='./data')
         print("Dataset downloaded and extracted successfully!")
-
+    
     # Data transforms
     train_transform, test_transform = get_imagenette_transforms()
     
@@ -456,15 +449,42 @@ def get_device():
     return torch.device('cpu')
 
 # %%
+# Implement Mixup
+def mixup_data(x, y, alpha=1.0):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(x.device)
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
 def train_model(dataset, model, train_loader, test_loader, epochs, device):
     """Train the model with improved training process."""
-    criterion = nn.CrossEntropyLoss()
-    
-    # Cosine annealing learning rate scheduler with lower initial learning rate
-    optimizer = optim.AdamW(model.parameters(), lr=0.0003, weight_decay=0.01)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    if dataset.lower() == 'cifar100':
+        model = train_cifar(model, train_loader, test_loader, epochs, device)
+    elif dataset.lower() == 'gtsrb':
+        model = train_gtsrb(model, train_loader, test_loader, epochs, device)
+    elif dataset.lower() == 'imagenette':
+        model = train_imagenette(model, train_loader, test_loader, epochs, device)
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+    return model
+
+def train_cifar(model, train_loader, test_loader, epochs=200, device='cuda'):
+    """Train CIFAR100 with improved training strategy."""
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     
     best_acc = 0.0
+    model = model.to(device)
     
     for epoch in range(epochs):
         model.train()
@@ -472,27 +492,24 @@ def train_model(dataset, model, train_loader, test_loader, epochs, device):
         correct = 0
         total = 0
         
-        # Training loop with progress bar
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs}')
         for inputs, labels in pbar:
             inputs, labels = inputs.to(device), labels.to(device)
             
+            # Apply Mixup
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, labels, alpha=1.0)
+            
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
             loss.backward()
-            
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            
             optimizer.step()
             
             running_loss += loss.item()
             _, predicted = outputs.max(1)
             total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
+            correct += (lam * predicted.eq(targets_a).sum().item() + (1 - lam) * predicted.eq(targets_b).sum().item())
             
-            # Update progress bar
             pbar.set_postfix({
                 'loss': running_loss/(total),
                 'acc': 100.*correct/total
@@ -500,7 +517,6 @@ def train_model(dataset, model, train_loader, test_loader, epochs, device):
         
         # Validation phase
         model.eval()
-        test_loss = 0
         correct = 0
         total = 0
         
@@ -508,9 +524,6 @@ def train_model(dataset, model, train_loader, test_loader, epochs, device):
             for inputs, labels in test_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                
-                test_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += labels.size(0)
                 correct += predicted.eq(labels).sum().item()
@@ -518,12 +531,14 @@ def train_model(dataset, model, train_loader, test_loader, epochs, device):
         acc = 100.*correct/total
         print(f'Validation Accuracy: {acc:.2f}%')
         
-        # Save best accuracy
-        best_acc = max(best_acc, acc)
+        if acc > best_acc:
+            best_acc = acc
+            print(f'New best accuracy: {best_acc:.2f}%')
+        
         scheduler.step()
     
-    print(f'Best validation accuracy: {best_acc:.2f}%')
-    return model  # Return only the model
+    print(f'Final best accuracy: {best_acc:.2f}%')
+    return model
 
 def train_traditional_classifiers(train_features, train_labels, test_features, test_labels):
     """Train and evaluate traditional classifiers with improved parameters."""
@@ -536,7 +551,7 @@ def train_traditional_classifiers(train_features, train_labels, test_features, t
     pca = PCA(n_components=0.95)
     train_features = pca.fit_transform(train_features)
     test_features = pca.transform(test_features)
-    print(f"Reduced feature dimension from {train_features.shape[1]} to {train_features.shape[1]} components")
+    print(f"Reduced feature dimension to {train_features.shape[1]} components")
     
     classifiers = {
         'knn': KNeighborsClassifier(
@@ -583,127 +598,6 @@ def train_traditional_classifiers(train_features, train_labels, test_features, t
         results[name] = acc
     
     return results
-
-def train_cifar(model, train_loader, test_loader, epochs=80, device='cuda'):
-    """Train CIFAR100 with improved training strategy."""
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)  # Added label smoothing
-    
-    backbone_params = []
-    classifier_params = []
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            if "classifier" in name:
-                classifier_params.append(param)
-            else:
-                backbone_params.append(param)
-    
-    # Use different optimizers with adjusted learning rates
-    backbone_optimizer = torch.optim.AdamW(backbone_params, lr=0.0001, weight_decay=0.01)
-    classifier_optimizer = torch.optim.AdamW(classifier_params, lr=0.001, weight_decay=0.01)
-    
-    # Cosine annealing with warmup
-    backbone_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        backbone_optimizer,
-        max_lr=0.001,
-        epochs=epochs,
-        steps_per_epoch=len(train_loader),
-        pct_start=0.2,
-        div_factor=25,
-        final_div_factor=1e4
-    )
-    
-    classifier_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        classifier_optimizer,
-        max_lr=0.01,
-        epochs=epochs,
-        steps_per_epoch=len(train_loader),
-        pct_start=0.2,
-        div_factor=25,
-        final_div_factor=1e4
-    )
-    
-    best_acc = 0.0
-    model = model.to(device)
-    
-    # Increased patience for longer training
-    patience = 15  # Increased from 10
-    patience_counter = 0
-    best_val_loss = float('inf')
-    
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        correct = 0
-        total = 0
-        
-        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs}')
-        for inputs, labels in pbar:
-            inputs, labels = inputs.to(device), labels.to(device)
-            
-            backbone_optimizer.zero_grad()
-            classifier_optimizer.zero_grad()
-            
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
-            loss.backward()
-            
-            # Gradient clipping for both optimizers
-            torch.nn.utils.clip_grad_norm_(backbone_params, max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(classifier_params, max_norm=1.0)
-            
-            backbone_optimizer.step()
-            classifier_optimizer.step()
-            backbone_scheduler.step()
-            classifier_scheduler.step()
-            
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-            running_loss += loss.item()
-            
-            pbar.set_postfix({
-                'loss': running_loss/total,
-                'acc': 100.*correct/total,
-                'lr_backbone': backbone_scheduler.get_last_lr()[0],
-                'lr_classifier': classifier_scheduler.get_last_lr()[0]
-            })
-        
-        # Validation phase
-        model.eval()
-        val_loss = 0
-        val_correct = 0
-        val_total = 0
-        
-        with torch.no_grad():
-            for inputs, labels in test_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                
-                val_loss += loss.item()
-                _, predicted = outputs.max(1)
-                val_total += labels.size(0)
-                val_correct += predicted.eq(labels).sum().item()
-        
-        val_loss = val_loss/val_total
-        val_acc = 100.*val_correct/val_total
-        print(f'\nValidation Loss: {val_loss:.4f}, Accuracy: {val_acc:.2f}%')
-        
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-            if val_acc > best_acc:
-                best_acc = val_acc
-                print(f'New best accuracy: {best_acc:.2f}%')
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print(f'\nEarly stopping triggered after {epoch + 1} epochs')
-                break
-    
-    print(f'Final best accuracy: {best_acc:.2f}%')
-    return model
 
 def train_gtsrb(model, train_loader, test_loader, epochs=30, device='cuda'):
     criterion = nn.CrossEntropyLoss()
@@ -788,7 +682,6 @@ def train_gtsrb(model, train_loader, test_loader, epochs=30, device='cuda'):
     return model
 
 def train_imagenette(model, train_loader, test_loader, epochs=30, device='cuda'):
-    """Train Imagenette with improved training regime."""
     criterion = nn.CrossEntropyLoss()
     
     # Different learning rates for pretrained and new layers
@@ -874,18 +767,6 @@ def train_imagenette(model, train_loader, test_loader, epochs=30, device='cuda')
     print(f'Final best accuracy: {best_acc:.2f}%')
     return model
 
-def train_model(dataset_name, model, train_loader, test_loader, epochs=30, device='cuda'):
-    """Unified function to train any dataset's model"""
-    if dataset_name.lower() == 'cifar100':
-        model = train_cifar(model, train_loader, test_loader, epochs, device)
-    elif dataset_name.lower() == 'gtsrb':
-        model = train_gtsrb(model, train_loader, test_loader, epochs, device)
-    elif dataset_name.lower() == 'imagenette':
-        model = train_imagenette(model, train_loader, test_loader, epochs, device)
-    else:
-        raise ValueError(f"Unknown dataset: {dataset_name}")
-    return model
-
 def get_model(dataset_name):
     """Get the appropriate model for the dataset"""
     if dataset_name.lower() == 'cifar100':
@@ -955,7 +836,7 @@ def main():
     parser.add_argument('--dataset', type=str, default='all', choices=['all', 'cifar100', 'gtsrb', 'imagenette'],
                       help='Dataset to use (default: all)')
     parser.add_argument('--batch-size', type=int, default=128, help='Batch size')
-    parser.add_argument('--epochs', type=int, default=30, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=200, help='Number of epochs')
     parser.add_argument('--num-workers', type=int, default=2, help='Number of data loading workers')
     parser.add_argument('--subset-size-per-class', type=int, default=None, 
                       help='Number of samples per class to use (for balanced subset)')
@@ -1002,21 +883,22 @@ def main():
         model = train_model(dataset, model, train_loader, test_loader, args.epochs, device)
         
         # Extract features and train traditional classifiers
-        print("\nExtracting features and training traditional classifiers...")
-        train_features, train_labels = extract_features_from_loader(train_loader, model, device)
-        test_features, test_labels = extract_features_from_loader(test_loader, model, device)
-        
-        # Train and evaluate traditional classifiers
-        results = train_traditional_classifiers(train_features, train_labels, test_features, test_labels)
-        
-        # Update results for this dataset
-        all_results[dataset] = results
-        
-        # Save results after each dataset (in case of interruption)
-        with open(results_file, 'w') as f:
-            json.dump(all_results, f)
-        
-        print(f"\nResults for {dataset} saved to {results_file}")
+        if dataset.lower() == 'cifar100':
+            print("\nExtracting features and training traditional classifiers...")
+            train_features, train_labels = extract_features_from_loader(train_loader, model, device)
+            test_features, test_labels = extract_features_from_loader(test_loader, model, device)
+            
+            # Train and evaluate traditional classifiers
+            results = train_traditional_classifiers(train_features, train_labels, test_features, test_labels)
+            
+            # Update results for this dataset
+            all_results[dataset] = results
+            
+            # Save results after each dataset (in case of interruption)
+            with open(results_file, 'w') as f:
+                json.dump(all_results, f)
+            
+            print(f"\nResults for {dataset} saved to {results_file}")
     
     # Generate final comparison plot
     print("\nGenerating final performance comparison plot...")
