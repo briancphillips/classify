@@ -26,6 +26,47 @@ import io
 import copy
 import torch.backends.mps
 
+# Define transforms for each dataset
+CIFAR100_TRANSFORM_TRAIN = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+])
+
+CIFAR100_TRANSFORM_TEST = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+])
+
+GTSRB_TRANSFORM_TRAIN = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.RandomRotation(15),
+    transforms.ToTensor(),
+    transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
+])
+
+GTSRB_TRANSFORM_TEST = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
+])
+
+IMAGENETTE_TRANSFORM_TRAIN = transforms.Compose([
+    transforms.Resize(256),
+    transforms.RandomCrop(224),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+IMAGENETTE_TRANSFORM_TEST = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
 def extract_features_from_loader(loader, model, device):
     """Extract features using the CNN model's feature extractor."""
     features = []

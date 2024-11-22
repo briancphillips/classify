@@ -13,6 +13,9 @@ from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from tqdm import tqdm
 import argparse
+from models import get_model, save_model, load_model
+import torchvision
+from torchvision import datasets, transforms
 
 # Configure logging
 logging.basicConfig(
@@ -346,18 +349,11 @@ class PoisonExperiment:
         # Save checkpoint if name provided
         if checkpoint_name:
             checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}.pt")
-            from models import save_model
-            metadata = {
-                'epochs': epochs,
-                'learning_rate': learning_rate,
-                'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
-            }
-            save_model(self.model, checkpoint_path, metadata)
+            save_model(self.model, checkpoint_path)
     
     def load_checkpoint(self, checkpoint_name: str) -> dict:
         """Load a model checkpoint"""
         checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}.pt")
-        from models import load_model
         self.model, metadata = load_model(checkpoint_path)
         self.model = self.model.to(self.device)
         return metadata
