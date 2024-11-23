@@ -16,6 +16,7 @@ import argparse
 from models import get_model, save_model, load_model
 import torchvision
 from torchvision import datasets, transforms
+import copy
 
 # Configure logging
 logging.basicConfig(
@@ -104,62 +105,60 @@ def get_device() -> torch.device:
 
 class PGDAttack(PoisonAttack):
     """Projected Gradient Descent Attack"""
+    
     def poison_dataset(self, dataset: Dataset) -> Tuple[Dataset, PoisonResult]:
+        """Poison a dataset using PGD attack"""
         result = PoisonResult(self.config)
+        
+        # Create a copy of the dataset
+        poisoned_dataset = copy.deepcopy(dataset)
+        num_samples = len(dataset)
+        num_poison = int(num_samples * self.config.poison_ratio)
+        indices = np.random.choice(num_samples, num_poison, replace=False)
+        
+        # Get device
         device = get_device()
-        num_poison = int(len(dataset) * self.config.poison_ratio)
-        indices = np.random.choice(len(dataset), num_poison, replace=False)
         
-        # Convert dataset to tensor format if not already
-        if not isinstance(dataset.data, torch.Tensor):
-            data = torch.tensor(dataset.data).float()
-            if len(data.shape) == 3:
-                data = data.unsqueeze(1)  # Add channel dimension if needed
-            if data.shape[-3] == 3:  # If channels are last, transpose
-                data = data.permute(0, 3, 1, 2)
-        else:
-            data = dataset.data.clone()
+        # Create a simple model for generating adversarial examples
+        temp_model = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(3*32*32, 100)  # Assuming CIFAR100 dimensions
+        ).to(device)
+        criterion = nn.CrossEntropyLoss()
         
-        # Normalize data to [0, 1]
-        if data.max() > 1:
-            data = data / 255.0
-        
-        poisoned_data = data.clone()
-        poisoned_data = poisoned_data.to(device)
-        
-        # PGD attack
-        for idx in indices:
-            x = poisoned_data[idx:idx+1].clone().requires_grad_(True)
+        for idx in tqdm(indices, desc="Generating poisoned samples"):
+            x, y = dataset[idx]
+            x = x.unsqueeze(0).to(device)  # Add batch dimension
+            y = torch.tensor([y]).to(device)
             
-            # Random initialization
-            x = x + torch.zeros_like(x).uniform_(-self.config.pgd_eps, self.config.pgd_eps)
-            x = torch.clamp(x, 0, 1)
+            # Initialize delta randomly
+            delta = torch.zeros_like(x, requires_grad=True)
             
+            # PGD attack loop
             for _ in range(self.config.pgd_steps):
-                x.requires_grad_(True)
-                loss = torch.norm(x)  # Simple L2 norm loss (can be modified)
+                # Forward pass
+                x_adv = x + delta
+                output = temp_model(x_adv)
+                loss = criterion(output, y)
+                
+                # Backward pass
                 loss.backward()
                 
-                # PGD step
-                grad = x.grad.sign()
-                x = x + self.config.pgd_alpha * grad
+                # Update delta
+                grad = delta.grad.sign()
+                delta.data = delta.data + self.config.pgd_alpha * grad
+                delta.data = torch.clamp(delta.data, -self.config.pgd_eps, self.config.pgd_eps)
+                delta.data = torch.clamp(x + delta.data, 0, 1) - x
                 
-                # Project back to epsilon ball
-                diff = x - data[idx:idx+1].to(device)
-                diff = torch.clamp(diff, -self.config.pgd_eps, self.config.pgd_eps)
-                x = torch.clamp(data[idx:idx+1].to(device) + diff, 0, 1)
-                x = x.detach()
+                # Reset gradients
+                delta.grad.zero_()
             
-            poisoned_data[idx] = x.squeeze()
+            # Apply the perturbation
+            x_poisoned = torch.clamp(x + delta.detach(), 0, 1)
+            poisoned_dataset.data[idx] = x_poisoned.squeeze().cpu().numpy()
+            result.poisoned_indices.append(idx)
         
-        # Update dataset with poisoned samples
-        if hasattr(dataset, 'data'):
-            if isinstance(dataset.data, np.ndarray):
-                poisoned_data = (poisoned_data.cpu().numpy() * 255).astype(np.uint8)
-            dataset.data = poisoned_data.cpu() if isinstance(poisoned_data, torch.Tensor) else poisoned_data
-        
-        result.poisoned_indices = indices.tolist()
-        return dataset, result
+        return poisoned_dataset, result
 
 class GeneticAttack(PoisonAttack):
     """Genetic Algorithm Attack"""
