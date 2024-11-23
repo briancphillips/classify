@@ -395,6 +395,10 @@ class PoisonExperiment:
             attack = create_poison_attack(config)
             poisoned_dataset, result = attack.poison_dataset(self.train_dataset)
             
+            # Create poisoned test dataset
+            poisoned_test_dataset, _ = attack.poison_dataset(self.test_dataset)
+            poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=128)
+            
             # Create poisoned dataloader
             poisoned_loader = DataLoader(poisoned_dataset, batch_size=128, shuffle=True)
             
@@ -403,7 +407,7 @@ class PoisonExperiment:
             self.train_model(poisoned_loader, checkpoint_name=checkpoint_name)
             
             # Evaluate results
-            poisoned_acc, clean_acc = self.evaluate_attack(test_loader, test_loader)
+            poisoned_acc, clean_acc = self.evaluate_attack(poisoned_test_loader, test_loader)
             result.original_accuracy = clean_acc
             result.poisoned_accuracy = poisoned_acc
             result.poison_success_rate = 1.0 - (poisoned_acc / clean_acc)
