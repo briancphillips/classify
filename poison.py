@@ -689,6 +689,21 @@ def run_example():
                       help='Number of samples per class to use (default: None, use full dataset)')
     parser.add_argument('--num-workers', type=int, default=2,
                       help='Number of worker processes for data loading (default: 2)')
+    
+    # Training parameters
+    parser.add_argument('--epochs', type=int, default=30,
+                      help='Number of epochs (default: 30)')
+    parser.add_argument('--learning-rate', type=float, default=0.001,
+                      help='Learning rate (default: 0.001)')
+    parser.add_argument('--batch-size', type=int, default=128,
+                      help='Batch size (default: 128)')
+    
+    # Output parameters
+    parser.add_argument('--checkpoint-dir', type=str, default='checkpoints',
+                      help='Checkpoint directory (default: checkpoints)')
+    parser.add_argument('--checkpoint-name', type=str, default='clean_model',
+                      help='Name for model checkpoint (default: clean_model)')
+    
     args = parser.parse_args()
     
     # Create output directory
@@ -699,7 +714,7 @@ def run_example():
     model = get_model(args.dataset)
     train_loader, test_loader, train_dataset, test_dataset = get_dataset_loaders(
         args.dataset, 
-        batch_size=128, 
+        batch_size=args.batch_size, 
         num_workers=args.num_workers,
         subset_size_per_class=args.subset_size
     )
@@ -724,7 +739,17 @@ def run_example():
         train_dataset=train_dataset,
         test_dataset=test_dataset,
         configs=configs,
-        output_dir=dataset_output_dir
+        output_dir=dataset_output_dir,
+        checkpoint_dir=os.path.join(args.checkpoint_dir, args.dataset)
+    )
+    
+    # Train clean model
+    clean_train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    experiment.train_model(
+        clean_train_loader,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        checkpoint_name=args.checkpoint_name
     )
     
     experiment.run_experiments()
