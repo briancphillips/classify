@@ -3,20 +3,11 @@ import torch.nn as nn
 import numpy as np
 from typing import List, Dict, Tuple, Optional, Union, Callable
 import logging
-from enum import Enum
+import os
+import random
 import json
 from datetime import datetime
-import os
-from dataclasses import dataclass
-import random
 from torch.utils.data import Dataset, DataLoader
-import torch.optim as optim
-from tqdm import tqdm
-import argparse
-from models import get_model, save_model, load_model
-import torchvision
-from torchvision import datasets, transforms
-import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
@@ -26,11 +17,16 @@ from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Configure logging
+# Configure logging with more detailed format
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.FileHandler('debug.log'),
+        logging.StreamHandler()
+    ]
 )
+
 logger = logging.getLogger(__name__)
 
 class PoisonType(Enum):
@@ -390,19 +386,29 @@ class PoisonExperiment:
     
     def extract_features(self, dataset: Dataset) -> Tuple[np.ndarray, np.ndarray]:
         """Extract features from dataset using the model's feature extractor."""
+        logger.debug(f"Starting feature extraction for dataset of size {len(dataset)}")
         self.model.eval()
         features = []
         labels = []
         loader = DataLoader(dataset, batch_size=128)
+        total_batches = len(loader)
 
         with torch.no_grad():
-            for inputs, targets in loader:
+            for batch_idx, (inputs, targets) in enumerate(loader):
                 inputs = inputs.to(self.device)
+                logger.debug(f"Processing batch {batch_idx + 1}/{total_batches}, input shape: {inputs.shape}")
+                
                 batch_features = self.model.extract_features(inputs).cpu().numpy()
                 features.append(batch_features)
                 labels.append(targets.numpy())
+                
+                if (batch_idx + 1) % 10 == 0:
+                    logger.debug(f"Processed {batch_idx + 1} batches, current features shape: {batch_features.shape}")
 
-        return np.vstack(features), np.concatenate(labels)
+        features_array = np.vstack(features)
+        labels_array = np.concatenate(labels)
+        logger.debug(f"Feature extraction complete. Features shape: {features_array.shape}, Labels shape: {labels_array.shape}")
+        return features_array, labels_array
 
     def evaluate_classifiers(self, 
                            train_features: np.ndarray, 
@@ -410,15 +416,19 @@ class PoisonExperiment:
                            test_features: np.ndarray, 
                            test_labels: np.ndarray) -> Dict[str, float]:
         """Train and evaluate traditional classifiers."""
+        logger.debug(f"Starting classifier evaluation with shapes - Train: {train_features.shape}, Test: {test_features.shape}")
+        
         # Normalize features
         scaler = StandardScaler()
         train_features = scaler.fit_transform(train_features)
         test_features = scaler.transform(test_features)
+        logger.debug("Features normalized")
         
-        # Add PCA to reduce dimensionality while keeping 95% of variance
+        # Add PCA
         pca = PCA(n_components=0.95)
         train_features = pca.fit_transform(train_features)
         test_features = pca.transform(test_features)
+        logger.debug(f"PCA applied. New feature dimensions - Train: {train_features.shape}, Test: {test_features.shape}")
         logger.info(f"Reduced feature dimension to {train_features.shape[1]} components")
         
         classifiers = {
@@ -459,11 +469,15 @@ class PoisonExperiment:
         results = {}
         
         for name, clf in classifiers.items():
-            logger.info(f"Training {name.upper()}...")
-            clf.fit(train_features, train_labels)
-            acc = clf.score(test_features, test_labels) * 100
-            logger.info(f"{name.upper()} Accuracy: {acc:.2f}%")
-            results[name] = acc
+            logger.debug(f"Training {name.upper()} classifier...")
+            try:
+                clf.fit(train_features, train_labels)
+                acc = clf.score(test_features, test_labels) * 100
+                logger.info(f"{name.upper()} Accuracy: {acc:.2f}%")
+                results[name] = acc
+            except Exception as e:
+                logger.error(f"Error training {name.upper()} classifier: {str(e)}")
+                results[name] = 0.0
         
         return results
 
@@ -506,17 +520,21 @@ class PoisonExperiment:
     
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
+        logger.info("Starting poisoning experiments")
         results = []
         
         # Create dataloaders
         train_loader = DataLoader(self.train_dataset, batch_size=128, shuffle=True)
         test_loader = DataLoader(self.test_dataset, batch_size=128)
         
+        logger.debug(f"Dataset sizes - Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}")
+        
         # Get clean model accuracy
         clean_acc = evaluate_model(self.model, test_loader, self.device)
         logger.info(f"Clean model accuracy: {clean_acc:.2f}%")
         
         # Extract features from clean training and test data
+        logger.info("Extracting features from clean data")
         train_features, train_labels = self.extract_features(self.train_dataset)
         test_features, test_labels = self.extract_features(self.test_dataset)
         
@@ -526,51 +544,72 @@ class PoisonExperiment:
             # Create and apply poison attack
             attack = create_poison_attack(config)
             poisoned_dataset, result = attack.poison_dataset(self.train_dataset)
+            logger.debug(f"Created poisoned training dataset with {len(poisoned_dataset)} samples")
             
             # Create poisoned test dataset
             poisoned_test_dataset, _ = attack.poison_dataset(self.test_dataset)
             poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=128)
+            logger.debug(f"Created poisoned test dataset with {len(poisoned_test_dataset)} samples")
             
             # Create poisoned dataloader
             poisoned_loader = DataLoader(poisoned_dataset, batch_size=128, shuffle=True)
             
             # Train model on poisoned data
             checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
+            logger.info(f"Training model with checkpoint name: {checkpoint_name}")
             self.train_model(poisoned_loader, checkpoint_name=checkpoint_name)
             
             # Evaluate neural network results
+            logger.info("Evaluating model on poisoned and clean data")
             poisoned_acc, clean_acc = self.evaluate_attack(poisoned_test_loader, test_loader)
             result.original_accuracy = clean_acc
             result.poisoned_accuracy = poisoned_acc
             result.poison_success_rate = 1.0 - (poisoned_acc / clean_acc)
             
             # Extract features from poisoned test data
+            logger.info("Extracting features from poisoned test data")
             poisoned_test_features, poisoned_test_labels = self.extract_features(poisoned_test_dataset)
             
             # Evaluate traditional classifiers on clean data
-            logger.info("Evaluating classifiers on clean data...")
+            logger.info("Evaluating classifiers on clean data")
             result.classifier_results_clean = self.evaluate_classifiers(
                 train_features, train_labels,
                 test_features, test_labels
             )
             
             # Evaluate traditional classifiers on poisoned data
-            logger.info("Evaluating classifiers on poisoned data...")
+            logger.info("Evaluating classifiers on poisoned data")
             result.classifier_results_poisoned = self.evaluate_classifiers(
                 train_features, train_labels,
                 poisoned_test_features, poisoned_test_labels
             )
             
             results.append(result)
-            result.save(self.output_dir)
             
-            logger.info(f"Attack Results:")
+            # Save results
+            try:
+                result.save(self.output_dir)
+                logger.debug(f"Results saved to {self.output_dir}")
+            except Exception as e:
+                logger.error(f"Error saving results: {str(e)}")
+            
+            logger.info("Attack Results Summary:")
             logger.info(f"Original Accuracy: {clean_acc:.2f}%")
             logger.info(f"Poisoned Accuracy: {poisoned_acc:.2f}%")
             logger.info(f"Attack Success Rate: {result.poison_success_rate:.2f}")
+            logger.info("Traditional Classifier Results (Clean):")
+            for clf_name, acc in result.classifier_results_clean.items():
+                logger.info(f"  {clf_name.upper()}: {acc:.2f}%")
+            logger.info("Traditional Classifier Results (Poisoned):")
+            for clf_name, acc in result.classifier_results_poisoned.items():
+                logger.info(f"  {clf_name.upper()}: {acc:.2f}%")
         
         # Plot classifier comparison
-        self.plot_classifier_comparison(results, self.output_dir)
+        try:
+            self.plot_classifier_comparison(results, self.output_dir)
+            logger.debug("Classifier comparison plot saved")
+        except Exception as e:
+            logger.error(f"Error creating classifier comparison plot: {str(e)}")
         
         return results
 
@@ -578,17 +617,22 @@ def evaluate_model(model: nn.Module,
                   dataloader: DataLoader,
                   device: torch.device) -> float:
     """Evaluate model accuracy"""
+    logger.debug("Starting model evaluation")
     model.eval()
     correct = 0
     total = 0
+    
     with torch.no_grad():
-        for inputs, labels in dataloader:
-            inputs, labels = inputs.to(device), labels.to(device)
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
             _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-    return correct / total
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+    
+    accuracy = 100. * correct / total
+    logger.debug(f"Evaluation complete. Accuracy: {accuracy:.2f}%")
+    return accuracy
 
 def run_example():
     import argparse
