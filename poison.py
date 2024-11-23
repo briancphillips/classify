@@ -16,6 +16,7 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -505,9 +506,12 @@ class PoisonExperiment:
                     'Poison Ratio': result.config.poison_ratio
                 })
         
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
         # Create plot
         plt.figure(figsize=(12, 6))
-        sns.barplot(data=data, x='Classifier', y='Accuracy', hue='Dataset')
+        sns.barplot(data=df, x='Classifier', y='Accuracy', hue='Dataset')
         plt.title('Classifier Performance Comparison')
         plt.ylabel('Accuracy (%)')
         plt.xticks(rotation=45)
@@ -517,6 +521,7 @@ class PoisonExperiment:
         plot_path = os.path.join(output_dir, f'classifier_comparison_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
         plt.savefig(plot_path)
         plt.close()
+        logger.info(f"Classifier comparison plot saved to {plot_path}")
     
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
@@ -630,8 +635,9 @@ def evaluate_model(model: nn.Module,
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
     
-    accuracy = 100. * correct / total
-    logger.debug(f"Evaluation complete. Accuracy: {accuracy:.2f}%")
+    accuracy = 100.0 * correct / total
+    logger.debug(f"Evaluation complete. Total samples: {total}, Correct predictions: {correct}")
+    logger.debug(f"Accuracy: {accuracy:.2f}%")
     return accuracy
 
 def run_example():
