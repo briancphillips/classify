@@ -473,16 +473,20 @@ def run_example():
                       help='Output directory (default: results/[dataset])')
     parser.add_argument('--checkpoint-dir', type=str, default=None,
                       help='Checkpoint directory (default: checkpoints/[dataset])')
-    parser.add_argument('--checkpoint-name', type=str, default='clean_model',
-                      help='Name for model checkpoint (default: clean_model)')
+    parser.add_argument('--checkpoint-name', type=str, default=None,
+                      help='Name of checkpoint to save/load')
+    parser.add_argument('--load-checkpoint', action='store_true',
+                      help='Load model from checkpoint instead of training')
     
     args = parser.parse_args()
     
-    # Set output directories if not specified
+    # Set default directories if not specified
     if args.output_dir is None:
         args.output_dir = f"results/{args.dataset}"
     if args.checkpoint_dir is None:
         args.checkpoint_dir = f"checkpoints/{args.dataset}"
+    if args.checkpoint_name is None:
+        args.checkpoint_name = f"{args.dataset}_clean"
     
     # Create attack config based on args
     if args.attack == 'pgd':
@@ -567,19 +571,24 @@ def run_example():
         checkpoint_dir=args.checkpoint_dir
     )
     
-    # Train clean model and save checkpoint
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=args.batch_size, 
-        shuffle=True,
-        num_workers=args.num_workers
-    )
-    experiment.train_model(
-        train_loader,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        checkpoint_name=args.checkpoint_name
-    )
+    # Either load checkpoint or train clean model
+    if args.load_checkpoint:
+        logging.info(f"Loading checkpoint: {args.checkpoint_name}")
+        experiment.load_checkpoint(args.checkpoint_name)
+    else:
+        logging.info("Training clean model...")
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=args.batch_size, 
+            shuffle=True,
+            num_workers=args.num_workers
+        )
+        experiment.train_model(
+            train_loader,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            checkpoint_name=args.checkpoint_name
+        )
     
     # Run poisoning experiments
     experiment.run_experiments()
