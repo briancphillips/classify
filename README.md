@@ -219,7 +219,59 @@ Output parameters:
                       Name for model checkpoint (default: clean_model)
 ```
 
-### Custom Configuration
+## Clean Training with models.py
+
+For training clean models without any poisoning, you can use `models.py` directly:
+
+```bash
+python models.py [args]
+```
+
+### Command Line Arguments
+
+```
+Dataset selection:
+  --dataset {cifar100,gtsrb,imagenette}
+                        Dataset to use (default: cifar100)
+  --batch-size BATCH_SIZE
+                        Batch size for training (default: 128)
+  --epochs EPOCHS       Number of training epochs (default: varies by dataset)
+                       - CIFAR100: 200 epochs
+                       - GTSRB: 30 epochs
+                       - Imagenette: 30 epochs
+  --learning-rate LR   Initial learning rate (default: varies by dataset)
+                       - CIFAR100: 0.1
+                       - GTSRB: 0.001
+                       - Imagenette: 0.01
+  --num-workers NUM_WORKERS
+                        Number of data loading workers (default: 4)
+  --device DEVICE      Device to use (cuda, mps, or cpu)
+
+Output options:
+  --checkpoint-dir DIR Path to save model checkpoints (default: checkpoints/[dataset])
+  --results-dir DIR   Path to save training results (default: results/[dataset])
+```
+
+### Examples
+
+1. Train CIFAR100 model:
+```bash
+python models.py --dataset cifar100 --epochs 200
+```
+
+2. Train GTSRB model with custom batch size:
+```bash
+python models.py --dataset gtsrb --batch-size 64
+```
+
+3. Train Imagenette model on CPU:
+```bash
+python models.py --dataset imagenette --device cpu
+```
+
+Each model will be saved in the checkpoints directory with training metrics and can be loaded later using the functions described in the Model Functions section.
+
+## Custom Configuration
 Create a Python script with your configuration:
 
 ```python
