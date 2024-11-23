@@ -561,14 +561,17 @@ class PoisonExperiment:
     
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
-        logger.info("Starting poisoning experiments")
         results = []
-        
-        # Create dataloaders
-        train_loader = DataLoader(self.train_dataset, batch_size=128, shuffle=True)
         test_loader = DataLoader(self.test_dataset, batch_size=128)
-        
+        clean_train_loader = DataLoader(self.train_dataset, batch_size=128, shuffle=True)
+
         logger.debug(f"Dataset sizes - Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}")
+        
+        # Train and save clean model first
+        logger.info("Training clean model")
+        clean_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        clean_checkpoint_name = f"clean_model_{clean_timestamp}"
+        self.train_model(clean_train_loader, checkpoint_name=clean_checkpoint_name)
         
         # Get clean model accuracy
         clean_acc = evaluate_model(self.model, test_loader, self.device)
