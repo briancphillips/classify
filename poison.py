@@ -684,6 +684,8 @@ def run_example():
     parser.add_argument('--output_dir', type=str, default='results')
     parser.add_argument('--subset-size', type=int, default=None, 
                       help='Number of samples per class to use (default: None, use full dataset)')
+    parser.add_argument('--num-workers', type=int, default=2,
+                      help='Number of worker processes for data loading (default: 2)')
     args = parser.parse_args()
     
     # Create output directory
@@ -695,7 +697,7 @@ def run_example():
     train_loader, test_loader, train_dataset, test_dataset = get_dataset_loaders(
         args.dataset, 
         batch_size=128, 
-        num_workers=2,
+        num_workers=args.num_workers,
         subset_size_per_class=args.subset_size
     )
     
