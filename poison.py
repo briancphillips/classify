@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import torch.optim as optim
 from tqdm import tqdm
 import argparse
-from models import get_model, save_model, load_model
+from models import get_model, save_model, load_model, get_dataset_loaders
 import torchvision
 from torchvision import datasets, transforms
 import copy
@@ -36,6 +36,9 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Set matplotlib logger to WARNING level to suppress font debug messages
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +155,20 @@ class PGDAttack(PoisonAttack):
         ).to(device)
         criterion = nn.CrossEntropyLoss()
         
+        # If dataset is a Subset, get the original dataset
+        if isinstance(dataset, torch.utils.data.Subset):
+            original_dataset = dataset.dataset
+            # Map subset indices to original dataset indices
+            indices = [dataset.indices[i] for i in indices]
+        else:
+            original_dataset = dataset
+        
+        # Create a new poisoned dataset
+        poisoned_data = copy.deepcopy(original_dataset.data)
+        poisoned_targets = copy.deepcopy(original_dataset.targets)
+        
         for idx in tqdm(indices, desc="Generating poisoned samples"):
-            x, y = dataset[idx]
+            x, y = dataset[idx if not isinstance(dataset, torch.utils.data.Subset) else indices.index(idx)]
             x = x.unsqueeze(0).to(device)  # Add batch dimension
             y = torch.tensor([y]).to(device)
             
@@ -184,8 +199,17 @@ class PGDAttack(PoisonAttack):
             
             # Convert from (C,H,W) to (H,W,C) for dataset storage
             x_poisoned = x_poisoned.squeeze().permute(1, 2, 0).cpu().numpy()
-            poisoned_dataset.data[idx] = x_poisoned
+            poisoned_data[idx] = x_poisoned
             result.poisoned_indices.append(idx)
+        
+        # Create a new dataset with poisoned data
+        poisoned_dataset = copy.deepcopy(original_dataset)
+        poisoned_dataset.data = poisoned_data
+        poisoned_dataset.targets = poisoned_targets
+        
+        # If original dataset was a subset, create a new subset with poisoned data
+        if isinstance(dataset, torch.utils.data.Subset):
+            poisoned_dataset = torch.utils.data.Subset(poisoned_dataset, dataset.indices)
         
         return poisoned_dataset, result
 
@@ -653,171 +677,48 @@ def run_example():
     import argparse
     
     parser = argparse.ArgumentParser(description='Run poisoning experiments')
-    parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar100', 'gtsrb', 'imagenette'],
-                      help='Dataset to use (default: cifar100)')
-    parser.add_argument('--attack', type=str, default='pgd', 
-                      choices=['pgd', 'ga', 'label_flip_random_random', 'label_flip_random_target', 'label_flip_source_target'],
-                      help='Attack type (default: pgd)')
-    parser.add_argument('--poison-ratio', type=float, default=0.1,
-                      help='Poison ratio (default: 0.1)')
-    parser.add_argument('--random-seed', type=int, default=42,
-                      help='Random seed (default: 42)')
-    
-    # PGD specific args
-    parser.add_argument('--pgd-eps', type=float, default=0.3,
-                      help='PGD epsilon (default: 0.3)')
-    parser.add_argument('--pgd-alpha', type=float, default=0.01,
-                      help='PGD step size (default: 0.01)')
-    parser.add_argument('--pgd-steps', type=int, default=40,
-                      help='PGD number of steps (default: 40)')
-    
-    # GA specific args
-    parser.add_argument('--ga-pop-size', type=int, default=50,
-                      help='GA population size (default: 50)')
-    parser.add_argument('--ga-generations', type=int, default=100,
-                      help='GA number of generations (default: 100)')
-    parser.add_argument('--ga-mutation-rate', type=float, default=0.1,
-                      help='GA mutation rate (default: 0.1)')
-    
-    # Label flipping specific args
-    parser.add_argument('--source-class', type=int, default=None,
-                      help='Source class for label flipping (default: None)')
-    parser.add_argument('--target-class', type=int, default=None,
-                      help='Target class for label flipping (default: None)')
-    
-    # Training args
-    parser.add_argument('--epochs', type=int, default=30,
-                      help='Number of epochs (default: 30)')
-    parser.add_argument('--learning-rate', type=float, default=0.001,
-                      help='Learning rate (default: 0.001)')
-    parser.add_argument('--batch-size', type=int, default=128,
-                      help='Batch size (default: 128)')
-    parser.add_argument('--num-workers', type=int, default=4,
-                      help='Number of data loading workers (default: 4)')
-    
-    # Output args
-    parser.add_argument('--output-dir', type=str, default=None,
-                      help='Output directory (default: results/[dataset])')
-    parser.add_argument('--checkpoint-dir', type=str, default=None,
-                      help='Checkpoint directory (default: checkpoints/[dataset])')
-    parser.add_argument('--checkpoint-name', type=str, default=None,
-                      help='Name of checkpoint to save/load')
-    parser.add_argument('--load-checkpoint', action='store_true',
-                      help='Load model from checkpoint instead of training')
-    
+    parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar100', 'gtsrb', 'imagenette'])
+    parser.add_argument('--output_dir', type=str, default='results')
+    parser.add_argument('--subset-size', type=int, default=None, 
+                      help='Number of samples per class to use (default: None, use full dataset)')
     args = parser.parse_args()
     
-    # Set default directories if not specified
-    if args.output_dir is None:
-        args.output_dir = f"results/{args.dataset}"
-    if args.checkpoint_dir is None:
-        args.checkpoint_dir = f"checkpoints/{args.dataset}"
-    if args.checkpoint_name is None:
-        args.checkpoint_name = "clean_model"
+    # Create output directory
+    dataset_output_dir = os.path.join(args.output_dir, args.dataset)
+    os.makedirs(dataset_output_dir, exist_ok=True)
     
-    # Create attack config based on args
-    if args.attack == 'pgd':
-        config = PoisonConfig(
-            poison_type=PoisonType.PGD,
-            poison_ratio=args.poison_ratio,
-            pgd_eps=args.pgd_eps,
-            pgd_alpha=args.pgd_alpha,
-            pgd_steps=args.pgd_steps,
-            random_seed=args.random_seed
-        )
-    elif args.attack == 'ga':
-        config = PoisonConfig(
-            poison_type=PoisonType.GA,
-            poison_ratio=args.poison_ratio,
-            ga_pop_size=args.ga_pop_size,
-            ga_generations=args.ga_generations,
-            ga_mutation_rate=args.ga_mutation_rate,
-            random_seed=args.random_seed
-        )
-    elif args.attack == 'label_flip_random_random':
-        config = PoisonConfig(
-            poison_type=PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM,
-            poison_ratio=args.poison_ratio,
-            random_seed=args.random_seed
-        )
-    elif args.attack == 'label_flip_random_target':
-        if args.target_class is None:
-            raise ValueError("Must specify --target-class for label_flip_random_target attack")
-        config = PoisonConfig(
-            poison_type=PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
-            poison_ratio=args.poison_ratio,
-            target_class=args.target_class,
-            random_seed=args.random_seed
-        )
-    elif args.attack == 'label_flip_source_target':
-        if args.source_class is None or args.target_class is None:
-            raise ValueError("Must specify both --source-class and --target-class for label_flip_source_target attack")
-        config = PoisonConfig(
-            poison_type=PoisonType.LABEL_FLIP_SOURCE_TO_TARGET,
-            poison_ratio=args.poison_ratio,
-            source_class=args.source_class,
-            target_class=args.target_class,
-            random_seed=args.random_seed
-        )
-    
-    # Create model and load dataset
+    # Get model and dataset
     model = get_model(args.dataset)
-    
-    # Get appropriate transforms
-    if args.dataset == 'cifar100':
-        from models import CIFAR100_TRANSFORM_TRAIN, CIFAR100_TRANSFORM_TEST
-        train_transform = CIFAR100_TRANSFORM_TRAIN
-        test_transform = CIFAR100_TRANSFORM_TEST
-        dataset_class = torchvision.datasets.CIFAR100
-    elif args.dataset == 'gtsrb':
-        from models import get_gtsrb_transforms
-        train_transform, test_transform = get_gtsrb_transforms()
-        dataset_class = torchvision.datasets.GTSRB
-    else:  # imagenette
-        from models import get_imagenette_transforms
-        train_transform, test_transform = get_imagenette_transforms()
-        dataset_class = torchvision.datasets.ImageFolder
-    
-    # Load datasets
-    train_dataset = dataset_class(
-        root='./data', train=True, download=True,
-        transform=train_transform
-    )
-    test_dataset = dataset_class(
-        root='./data', train=False, download=True,
-        transform=test_transform
+    train_loader, test_loader, train_dataset, test_dataset = get_dataset_loaders(
+        args.dataset, 
+        batch_size=128, 
+        num_workers=2,
+        subset_size_per_class=args.subset_size
     )
     
-    # Create experiment
+    logger.info(f"Dataset sizes - Train: {len(train_dataset)}, Test: {len(test_dataset)}")
+    
+    # Define poisoning configurations for testing
+    configs = [
+        PoisonConfig(
+            poison_type=PoisonType.PGD,
+            poison_ratio=0.1,
+            pgd_eps=0.3,
+            pgd_alpha=0.01,
+            pgd_steps=40,
+            random_seed=42
+        )
+    ]
+    
+    # Create and run experiment
     experiment = PoisonExperiment(
         model=model,
         train_dataset=train_dataset,
         test_dataset=test_dataset,
-        configs=[config],
-        output_dir=args.output_dir,
-        checkpoint_dir=args.checkpoint_dir
+        configs=configs,
+        output_dir=dataset_output_dir
     )
     
-    # Either load checkpoint or train clean model
-    if args.load_checkpoint:
-        logging.info(f"Loading checkpoint: {args.checkpoint_name}")
-        experiment.load_checkpoint(args.checkpoint_name)
-    else:
-        logging.info("Training clean model...")
-        train_loader = DataLoader(
-            train_dataset, 
-            batch_size=args.batch_size, 
-            shuffle=True,
-            num_workers=args.num_workers
-        )
-        experiment.train_model(
-            train_loader,
-            epochs=args.epochs,
-            learning_rate=args.learning_rate,
-            checkpoint_name=args.checkpoint_name
-        )
-    
-    # Run poisoning experiments
     experiment.run_experiments()
 
 if __name__ == "__main__":
