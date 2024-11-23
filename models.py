@@ -409,6 +409,9 @@ def get_dataset_loaders(dataset_name, batch_size=128, num_workers=2, subset_size
         batch_size: Batch size for the data loaders
         num_workers: Number of worker processes for data loading
         subset_size_per_class: If specified, create balanced subset with this many samples per class
+        
+    Returns:
+        tuple: (train_loader, test_loader, train_dataset, test_dataset)
     """
     if dataset_name.lower() == 'cifar100':
         train_dataset, test_dataset = load_cifar100(batch_size, num_workers, return_datasets=True)
@@ -441,7 +444,7 @@ def get_dataset_loaders(dataset_name, batch_size=128, num_workers=2, subset_size
         print(f"Using subset size of {subset_size_per_class} samples per class")
     print()
     
-    return train_loader, test_loader
+    return train_loader, test_loader, train_dataset, test_dataset
 
 def create_balanced_subset(dataset, subset_size_per_class):
     """
@@ -949,7 +952,7 @@ def main():
         print(f"{'='*50}\n")
         
         # Get data loaders
-        train_loader, test_loader = get_dataset_loaders(
+        train_loader, test_loader, train_dataset, test_dataset = get_dataset_loaders(
             dataset,
             args.batch_size,
             args.num_workers,

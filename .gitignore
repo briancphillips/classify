@@ -37,3 +37,8 @@ poison_results/
 *.pth
 logs/
 .DS_Store
+
+# Generated files and directories
+debug.log
+results/
+checkpoints/
