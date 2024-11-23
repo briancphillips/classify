@@ -155,7 +155,10 @@ class PGDAttack(PoisonAttack):
             
             # Apply the perturbation
             x_poisoned = torch.clamp(x + delta.detach(), 0, 1)
-            poisoned_dataset.data[idx] = x_poisoned.squeeze().cpu().numpy()
+            
+            # Convert from (C,H,W) to (H,W,C) for dataset storage
+            x_poisoned = x_poisoned.squeeze().permute(1, 2, 0).cpu().numpy()
+            poisoned_dataset.data[idx] = x_poisoned
             result.poisoned_indices.append(idx)
         
         return poisoned_dataset, result
