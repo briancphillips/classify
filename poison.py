@@ -489,7 +489,7 @@ def run_example():
     if args.checkpoint_dir is None:
         args.checkpoint_dir = f"checkpoints/{args.dataset}"
     if args.checkpoint_name is None:
-        args.checkpoint_name = f"{args.dataset}_clean"
+        args.checkpoint_name = "clean_model"
     
     # Create attack config based on args
     if args.attack == 'pgd':
