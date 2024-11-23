@@ -17,6 +17,14 @@ from models import get_model, save_model, load_model
 import torchvision
 from torchvision import datasets, transforms
 import copy
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Configure logging
 logging.basicConfig(
@@ -60,7 +68,9 @@ class PoisonResult:
         self.poison_success_rate: float = 0.0
         self.poisoned_indices: List[int] = []
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+        self.classifier_results_clean: Dict[str, float] = {}
+        self.classifier_results_poisoned: Dict[str, float] = {}
+
     def to_dict(self) -> Dict:
         """Convert results to dictionary for logging"""
         # Convert config to dict and handle PoisonType enum
@@ -78,7 +88,9 @@ class PoisonResult:
             "poisoned_accuracy": self.poisoned_accuracy,
             "poison_success_rate": self.poison_success_rate,
             "timestamp": self.timestamp,
-            "config": config_dict
+            "config": config_dict,
+            "classifier_results_clean": self.classifier_results_clean,
+            "classifier_results_poisoned": self.classifier_results_poisoned
         }
     
     def save(self, output_dir: str):
@@ -376,8 +388,124 @@ class PoisonExperiment:
         clean_acc = evaluate_model(self.model, clean_loader, self.device)
         return poisoned_acc, clean_acc
     
+    def extract_features(self, dataset: Dataset) -> Tuple[np.ndarray, np.ndarray]:
+        """Extract features from dataset using the model's feature extractor."""
+        self.model.eval()
+        features = []
+        labels = []
+        loader = DataLoader(dataset, batch_size=128)
+
+        with torch.no_grad():
+            for inputs, targets in loader:
+                inputs = inputs.to(self.device)
+                batch_features = self.model.extract_features(inputs).cpu().numpy()
+                features.append(batch_features)
+                labels.append(targets.numpy())
+
+        return np.vstack(features), np.concatenate(labels)
+
+    def evaluate_classifiers(self, 
+                           train_features: np.ndarray, 
+                           train_labels: np.ndarray,
+                           test_features: np.ndarray, 
+                           test_labels: np.ndarray) -> Dict[str, float]:
+        """Train and evaluate traditional classifiers."""
+        # Normalize features
+        scaler = StandardScaler()
+        train_features = scaler.fit_transform(train_features)
+        test_features = scaler.transform(test_features)
+        
+        # Add PCA to reduce dimensionality while keeping 95% of variance
+        pca = PCA(n_components=0.95)
+        train_features = pca.fit_transform(train_features)
+        test_features = pca.transform(test_features)
+        logger.info(f"Reduced feature dimension to {train_features.shape[1]} components")
+        
+        classifiers = {
+            'knn': KNeighborsClassifier(
+                n_neighbors=5,
+                weights='distance',
+                metric='cosine',
+                n_jobs=-1
+            ),
+            'rf': RandomForestClassifier(
+                n_estimators=200,
+                max_depth=None,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                max_features='sqrt',
+                class_weight='balanced',
+                n_jobs=-1,
+                random_state=42
+            ),
+            'svm': SVC(
+                kernel='rbf',
+                C=10.0,
+                gamma='scale',
+                class_weight='balanced',
+                cache_size=1000,
+                random_state=42
+            ),
+            'lr': LogisticRegression(
+                solver='lbfgs',
+                max_iter=1000,
+                C=1.0,
+                class_weight='balanced',
+                n_jobs=-1,
+                random_state=42
+            )
+        }
+        
+        results = {}
+        
+        for name, clf in classifiers.items():
+            logger.info(f"Training {name.upper()}...")
+            clf.fit(train_features, train_labels)
+            acc = clf.score(test_features, test_labels) * 100
+            logger.info(f"{name.upper()} Accuracy: {acc:.2f}%")
+            results[name] = acc
+        
+        return results
+
+    def plot_classifier_comparison(self, results: List[PoisonResult], output_dir: str):
+        """Plot classifier performance comparison."""
+        # Prepare data for plotting
+        data = []
+        for result in results:
+            # Clean data results
+            for clf_name, acc in result.classifier_results_clean.items():
+                data.append({
+                    'Classifier': clf_name.upper(),
+                    'Accuracy': acc,
+                    'Dataset': 'Clean',
+                    'Attack': result.config.poison_type.value,
+                    'Poison Ratio': result.config.poison_ratio
+                })
+            # Poisoned data results
+            for clf_name, acc in result.classifier_results_poisoned.items():
+                data.append({
+                    'Classifier': clf_name.upper(),
+                    'Accuracy': acc,
+                    'Dataset': 'Poisoned',
+                    'Attack': result.config.poison_type.value,
+                    'Poison Ratio': result.config.poison_ratio
+                })
+        
+        # Create plot
+        plt.figure(figsize=(12, 6))
+        sns.barplot(data=data, x='Classifier', y='Accuracy', hue='Dataset')
+        plt.title('Classifier Performance Comparison')
+        plt.ylabel('Accuracy (%)')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        
+        # Save plot
+        plot_path = os.path.join(output_dir, f'classifier_comparison_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
+        plt.savefig(plot_path)
+        plt.close()
+    
     def run_experiments(self) -> List[PoisonResult]:
-        """Run all poisoning experiments"""
+        """Run all poisoning experiments."""
         results = []
         
         # Create dataloaders
@@ -387,6 +515,10 @@ class PoisonExperiment:
         # Get clean model accuracy
         clean_acc = evaluate_model(self.model, test_loader, self.device)
         logger.info(f"Clean model accuracy: {clean_acc:.2f}%")
+        
+        # Extract features from clean training and test data
+        train_features, train_labels = self.extract_features(self.train_dataset)
+        test_features, test_labels = self.extract_features(self.test_dataset)
         
         for config in self.configs:
             logger.info(f"Running experiment with config: {config}")
@@ -406,11 +538,28 @@ class PoisonExperiment:
             checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
             self.train_model(poisoned_loader, checkpoint_name=checkpoint_name)
             
-            # Evaluate results
+            # Evaluate neural network results
             poisoned_acc, clean_acc = self.evaluate_attack(poisoned_test_loader, test_loader)
             result.original_accuracy = clean_acc
             result.poisoned_accuracy = poisoned_acc
             result.poison_success_rate = 1.0 - (poisoned_acc / clean_acc)
+            
+            # Extract features from poisoned test data
+            poisoned_test_features, poisoned_test_labels = self.extract_features(poisoned_test_dataset)
+            
+            # Evaluate traditional classifiers on clean data
+            logger.info("Evaluating classifiers on clean data...")
+            result.classifier_results_clean = self.evaluate_classifiers(
+                train_features, train_labels,
+                test_features, test_labels
+            )
+            
+            # Evaluate traditional classifiers on poisoned data
+            logger.info("Evaluating classifiers on poisoned data...")
+            result.classifier_results_poisoned = self.evaluate_classifiers(
+                train_features, train_labels,
+                poisoned_test_features, poisoned_test_labels
+            )
             
             results.append(result)
             result.save(self.output_dir)
@@ -419,6 +568,9 @@ class PoisonExperiment:
             logger.info(f"Original Accuracy: {clean_acc:.2f}%")
             logger.info(f"Poisoned Accuracy: {poisoned_acc:.2f}%")
             logger.info(f"Attack Success Rate: {result.poison_success_rate:.2f}")
+        
+        # Plot classifier comparison
+        self.plot_classifier_comparison(results, self.output_dir)
         
         return results
 
