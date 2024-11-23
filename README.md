@@ -23,6 +23,69 @@ This framework implements various data poisoning attacks on image classification
 - Custom classifier head
 - 10 output classes
 
+## Model Functions
+
+### Loading Models
+```python
+from models import get_model, save_model, load_model
+
+# Get a new model instance
+model = get_model('cifar100')  # or 'gtsrb' or 'imagenette'
+
+# Save a trained model
+save_model(model, 'checkpoints/cifar100/my_model.pt')
+
+# Load a saved model
+model, metadata = load_model('checkpoints/cifar100/my_model.pt')
+```
+
+### Data Transforms
+```python
+from models import (
+    CIFAR100_TRANSFORM_TRAIN, CIFAR100_TRANSFORM_TEST,
+    GTSRB_TRANSFORM_TRAIN, GTSRB_TRANSFORM_TEST,
+    IMAGENETTE_TRANSFORM_TRAIN, IMAGENETTE_TRANSFORM_TEST
+)
+
+# Use pre-defined transforms
+train_dataset = torchvision.datasets.CIFAR100(
+    root='./data', train=True,
+    transform=CIFAR100_TRANSFORM_TRAIN
+)
+test_dataset = torchvision.datasets.CIFAR100(
+    root='./data', train=False,
+    transform=CIFAR100_TRANSFORM_TEST
+)
+```
+
+### Model Architecture Details
+
+#### CIFAR100 Model
+- Input: 32x32x3 RGB images
+- Backbone: WideResNet-50-2 with modified first layer
+- Feature dimension: 2048
+- Output: 100 classes
+- Training: SGD with momentum, learning rate scheduling
+
+#### GTSRB Model
+- Input: 32x32x3 RGB images
+- Architecture:
+  - 4 convolutional blocks with batch normalization
+  - Global average pooling
+  - 2 fully connected layers
+- Output: 43 classes
+- Training: Adam optimizer, reduced learning rate on plateau
+
+#### Imagenette Model
+- Input: 224x224x3 RGB images
+- Backbone: Pretrained ResNet50
+- Modifications:
+  - Frozen backbone layers
+  - Custom classifier head
+  - Adaptive pooling for flexible input sizes
+- Output: 10 classes
+- Training: SGD with momentum, cosine annealing scheduler
+
 ## Available Attacks
 
 ### 1. Projected Gradient Descent (PGD)
