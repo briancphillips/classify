@@ -520,20 +520,23 @@ class PoisonExperiment:
         # Prepare data for plotting
         data = []
         for result in results:
-            # Clean data results
-            for clf_name, acc in result.classifier_results_clean.items():
+            # Add both clean and poisoned results for each classifier
+            for clf_name in ['knn', 'rf', 'svm', 'lr']:
+                # Add clean results (default to 0 if not present)
+                clean_acc = result.classifier_results_clean.get(clf_name, 0.0)
                 data.append({
                     'Classifier': clf_name.upper(),
-                    'Accuracy': acc,
+                    'Accuracy': clean_acc,
                     'Dataset': 'Clean',
                     'Attack': result.config.poison_type.value,
                     'Poison Ratio': result.config.poison_ratio
                 })
-            # Poisoned data results
-            for clf_name, acc in result.classifier_results_poisoned.items():
+                
+                # Add poisoned results (default to 0 if not present)
+                poisoned_acc = result.classifier_results_poisoned.get(clf_name, 0.0)
                 data.append({
                     'Classifier': clf_name.upper(),
-                    'Accuracy': acc,
+                    'Accuracy': poisoned_acc,
                     'Dataset': 'Poisoned',
                     'Attack': result.config.poison_type.value,
                     'Poison Ratio': result.config.poison_ratio
