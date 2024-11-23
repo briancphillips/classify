@@ -63,6 +63,14 @@ class PoisonResult:
         
     def to_dict(self) -> Dict:
         """Convert results to dictionary for logging"""
+        # Convert config to dict and handle PoisonType enum
+        config_dict = {}
+        for key, value in self.config.__dict__.items():
+            if isinstance(value, PoisonType):
+                config_dict[key] = value.value
+            else:
+                config_dict[key] = value
+                
         return {
             "poison_type": self.config.poison_type.value,
             "poison_ratio": self.config.poison_ratio,
@@ -70,7 +78,7 @@ class PoisonResult:
             "poisoned_accuracy": self.poisoned_accuracy,
             "poison_success_rate": self.poison_success_rate,
             "timestamp": self.timestamp,
-            "config": self.config.__dict__
+            "config": config_dict
         }
     
     def save(self, output_dir: str):
@@ -391,7 +399,8 @@ class PoisonExperiment:
             poisoned_loader = DataLoader(poisoned_dataset, batch_size=128, shuffle=True)
             
             # Train model on poisoned data
-            self.train_model(poisoned_loader)
+            checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
+            self.train_model(poisoned_loader, checkpoint_name=checkpoint_name)
             
             # Evaluate results
             poisoned_acc, clean_acc = self.evaluate_attack(test_loader, test_loader)
