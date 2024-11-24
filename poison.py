@@ -364,7 +364,10 @@ class PoisonExperiment:
                  configs: List[PoisonConfig],
                  output_dir: str = "poison_results",
                  checkpoint_dir: str = "checkpoints",
-                 device: Optional[torch.device] = None):
+                 device: Optional[torch.device] = None,
+                 epochs: int = 30,
+                 learning_rate: float = 0.001,
+                 batch_size: int = 128):
         self.model = model
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
@@ -372,6 +375,9 @@ class PoisonExperiment:
         self.output_dir = output_dir
         self.checkpoint_dir = checkpoint_dir
         self.device = device if device is not None else get_device()
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
         
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -562,8 +568,8 @@ class PoisonExperiment:
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
         results = []
-        test_loader = DataLoader(self.test_dataset, batch_size=128)
-        clean_train_loader = DataLoader(self.train_dataset, batch_size=128, shuffle=True)
+        test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size)
+        clean_train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
 
         logger.debug(f"Dataset sizes - Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}")
         
@@ -571,7 +577,12 @@ class PoisonExperiment:
         logger.info("Training clean model")
         clean_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         clean_checkpoint_name = f"clean_model_{clean_timestamp}"
-        self.train_model(clean_train_loader, checkpoint_name=clean_checkpoint_name)
+        self.train_model(
+            clean_train_loader,
+            epochs=self.epochs,
+            learning_rate=self.learning_rate,
+            checkpoint_name=clean_checkpoint_name
+        )
         
         # Get clean model accuracy
         clean_acc = evaluate_model(self.model, test_loader, self.device)
@@ -592,16 +603,21 @@ class PoisonExperiment:
             
             # Create poisoned test dataset
             poisoned_test_dataset, _ = attack.poison_dataset(self.test_dataset)
-            poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=128)
+            poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=self.batch_size)
             logger.debug(f"Created poisoned test dataset with {len(poisoned_test_dataset)} samples")
             
             # Create poisoned dataloader
-            poisoned_loader = DataLoader(poisoned_dataset, batch_size=128, shuffle=True)
+            poisoned_loader = DataLoader(poisoned_dataset, batch_size=self.batch_size, shuffle=True)
             
             # Train model on poisoned data
             checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
             logger.info(f"Training model with checkpoint name: {checkpoint_name}")
-            self.train_model(poisoned_loader, checkpoint_name=checkpoint_name)
+            self.train_model(
+                poisoned_loader,
+                epochs=self.epochs,
+                learning_rate=self.learning_rate,
+                checkpoint_name=checkpoint_name
+            )
             
             # Evaluate neural network results
             logger.info("Evaluating model on poisoned and clean data")
@@ -740,16 +756,10 @@ def run_example():
         test_dataset=test_dataset,
         configs=configs,
         output_dir=dataset_output_dir,
-        checkpoint_dir=os.path.join(args.checkpoint_dir, args.dataset)
-    )
-    
-    # Train clean model
-    clean_train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    experiment.train_model(
-        clean_train_loader,
+        checkpoint_dir=os.path.join(args.checkpoint_dir, args.dataset),
         epochs=args.epochs,
         learning_rate=args.learning_rate,
-        checkpoint_name=args.checkpoint_name
+        batch_size=args.batch_size
     )
     
     experiment.run_experiments()
