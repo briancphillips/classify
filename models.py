@@ -97,7 +97,7 @@ class CIFAR100Classifier(nn.Module):
     def __init__(self, num_classes=100):
         super(CIFAR100Classifier, self).__init__()
         # Create a WideResNet with depth=28 and width=10
-        self.backbone = torchvision.models.wide_resnet50_2(pretrained=False)
+        self.backbone = torchvision.models.wide_resnet50_2(weights=None)
         
         # Modify first conv layer and maxpool for CIFAR-100
         self.backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -205,8 +205,8 @@ class GTSRBClassifier(nn.Module):
 class ImagenetteClassifier(nn.Module):
     def __init__(self):
         super(ImagenetteClassifier, self).__init__()
-        # Use pretrained ResNet50
-        resnet = models.resnet50(pretrained=True)
+        # Use pretrained ResNet50 with ImageNet weights
+        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
         
         # Remove the final fully connected layer
         modules = list(resnet.children())[:-1]
