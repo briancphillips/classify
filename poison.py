@@ -409,25 +409,99 @@ class PoisonExperiment:
                    train_loader: DataLoader,
                    epochs: int = 30,
                    learning_rate: float = 0.001,
-                   checkpoint_name: Optional[str] = None):
-        """Train model on poisoned data"""
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+                   checkpoint_name: Optional[str] = None) -> None:
+        """Train model on data."""
+        logger.info(f"Starting training for {epochs} epochs with learning rate {learning_rate}")
+        
+        # Initialize optimizer and criterion
+        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         criterion = nn.CrossEntropyLoss()
         
-        for epoch in tqdm(range(epochs), desc="Training"):
+        # Try to load latest checkpoint if it exists
+        start_epoch = 0
+        if checkpoint_name:
+            checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}_latest.pth")
+            if os.path.exists(checkpoint_path):
+                try:
+                    checkpoint = torch.load(checkpoint_path)
+                    self.model.load_state_dict(checkpoint['model_state_dict'])
+                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    start_epoch = checkpoint['epoch'] + 1
+                    logger.info(f"Resuming from epoch {start_epoch}")
+                except Exception as e:
+                    logger.warning(f"Failed to load checkpoint: {e}")
+
+        best_loss = float('inf')
+        patience = 5  # Number of epochs to wait before early stopping
+        patience_counter = 0
+        
+        for epoch in range(start_epoch, epochs):
             self.model.train()
-            for batch_idx, (data, target) in enumerate(train_loader):
-                data, target = data.to(self.device), target.to(self.device)
+            running_loss = 0.0
+            total_batches = len(train_loader)
+            
+            # Log GPU memory usage at start of epoch if using CUDA
+            if self.device.type == 'cuda':
+                memory_allocated = torch.cuda.memory_allocated(self.device) / 1024**2
+                memory_reserved = torch.cuda.memory_reserved(self.device) / 1024**2
+                logger.info(f"GPU Memory: Allocated={memory_allocated:.1f}MB, Reserved={memory_reserved:.1f}MB")
+            
+            for batch_idx, (inputs, targets) in enumerate(train_loader):
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                
                 optimizer.zero_grad()
-                output = self.model(data)
-                loss = criterion(output, target)
+                outputs = self.model(inputs)
+                loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
-        
-        # Save checkpoint if name provided
-        if checkpoint_name:
-            checkpoint_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}.pt")
-            save_model(self.model, checkpoint_path)
+                
+                running_loss += loss.item()
+                
+                if batch_idx % 10 == 0:
+                    avg_loss = running_loss / (batch_idx + 1)
+                    progress = (batch_idx + 1) / total_batches * 100
+                    logger.debug(f"Epoch {epoch+1}/{epochs} - {progress:.1f}% - Loss: {avg_loss:.4f}")
+                
+                # Clear GPU cache periodically if using CUDA
+                if self.device.type == 'cuda' and batch_idx % 50 == 0:
+                    torch.cuda.empty_cache()
+            
+            # Calculate average loss for the epoch
+            epoch_loss = running_loss / len(train_loader)
+            logger.info(f"Epoch {epoch+1}/{epochs} complete - Avg Loss: {epoch_loss:.4f}")
+            
+            # Save checkpoint
+            if checkpoint_name:
+                # Save latest checkpoint
+                latest_checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': epoch_loss,
+                }
+                latest_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}_latest.pth")
+                torch.save(latest_checkpoint, latest_path)
+                
+                # Save best checkpoint if this is the best loss
+                if epoch_loss < best_loss:
+                    best_loss = epoch_loss
+                    best_path = os.path.join(self.checkpoint_dir, f"{checkpoint_name}_best.pth")
+                    torch.save(latest_checkpoint, best_path)
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+            
+            # Early stopping check
+            if patience_counter >= patience:
+                logger.info(f"Early stopping triggered after {patience} epochs without improvement")
+                break
+            
+            # Force GPU cache clear at end of epoch if using CUDA
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
+                memory_allocated = torch.cuda.memory_allocated(self.device) / 1024**2
+                memory_reserved = torch.cuda.memory_reserved(self.device) / 1024**2
+                logger.info(f"End of epoch GPU Memory: Allocated={memory_allocated:.1f}MB, Reserved={memory_reserved:.1f}MB")
     
     def load_checkpoint(self, checkpoint_name: str) -> dict:
         """Load a model checkpoint"""
