@@ -124,13 +124,33 @@ class PoisonAttack:
         """Poison a dataset according to configuration"""
         raise NotImplementedError
 
-def get_device() -> torch.device:
+def get_device(device_str: Optional[str] = None) -> torch.device:
     """Get the best available device (CUDA, MPS, or CPU)"""
+    if device_str:
+        if device_str == 'cuda' and torch.cuda.is_available():
+            device = torch.device('cuda')
+            logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
+        elif device_str == 'mps' and torch.backends.mps.is_available():
+            device = torch.device('mps')
+            logger.info("Using MPS device")
+        elif device_str == 'cpu':
+            device = torch.device('cpu')
+            logger.info("Using CPU device")
+        else:
+            logger.warning(f"Requested device '{device_str}' not available, falling back to best available device")
+            return get_device()
+        return device
+
     if torch.cuda.is_available():
-        return torch.device('cuda')
+        device = torch.device('cuda')
+        logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
     elif torch.backends.mps.is_available():
-        return torch.device('mps')
-    return torch.device('cpu')
+        device = torch.device('mps')
+        logger.info("Using MPS device")
+    else:
+        device = torch.device('cpu')
+        logger.info("Using CPU device")
+    return device
 
 class PGDAttack(PoisonAttack):
     """Projected Gradient Descent Attack"""
@@ -430,7 +450,7 @@ class PoisonExperiment:
         self.model.eval()
         features = []
         labels = []
-        loader = DataLoader(dataset, batch_size=128)
+        loader = DataLoader(dataset, batch_size=128, pin_memory=True)
         total_batches = len(loader)
 
         with torch.no_grad():
@@ -568,8 +588,8 @@ class PoisonExperiment:
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
         results = []
-        test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size)
-        clean_train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, pin_memory=True)
+        clean_train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
         logger.debug(f"Dataset sizes - Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}")
         
@@ -603,11 +623,11 @@ class PoisonExperiment:
             
             # Create poisoned test dataset
             poisoned_test_dataset, _ = attack.poison_dataset(self.test_dataset)
-            poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=self.batch_size)
+            poisoned_test_loader = DataLoader(poisoned_test_dataset, batch_size=self.batch_size, pin_memory=True)
             logger.debug(f"Created poisoned test dataset with {len(poisoned_test_dataset)} samples")
             
             # Create poisoned dataloader
-            poisoned_loader = DataLoader(poisoned_dataset, batch_size=self.batch_size, shuffle=True)
+            poisoned_loader = DataLoader(poisoned_dataset, batch_size=self.batch_size, shuffle=True, pin_memory=True)
             
             # Train model on poisoned data
             checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
@@ -713,6 +733,8 @@ def run_example():
                       help='Learning rate (default: 0.001)')
     parser.add_argument('--batch-size', type=int, default=128,
                       help='Batch size (default: 128)')
+    parser.add_argument('--device', type=str, choices=['cuda', 'mps', 'cpu'], default=None,
+                      help='Device to use for training (default: best available)')
     
     # Output parameters
     parser.add_argument('--checkpoint-dir', type=str, default='checkpoints',
@@ -757,6 +779,7 @@ def run_example():
         configs=configs,
         output_dir=dataset_output_dir,
         checkpoint_dir=os.path.join(args.checkpoint_dir, args.dataset),
+        device=get_device(args.device),
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         batch_size=args.batch_size
