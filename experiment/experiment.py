@@ -99,11 +99,19 @@ class PoisonExperiment:
             learning_rate=self.learning_rate,
             checkpoint_dir=self.checkpoint_dir,
             checkpoint_name="clean_model",
-            resume_training=True,  # Enable checkpoint resumption
+            resume_training=True,
         )
 
-        # Evaluate clean model
-        clean_accuracy = evaluate_model(self.model, self.test_loader, self.device)
+        # Evaluate clean model with single process
+        test_loader = DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            persistent_workers=False,
+        )
+        clean_accuracy = evaluate_model(self.model, test_loader, self.device)
         logger.info(f"Clean model accuracy: {clean_accuracy:.2f}%")
 
         # Run each poisoning configuration
@@ -120,33 +128,34 @@ class PoisonExperiment:
                     self.train_dataset, self.model
                 )
 
-                # Create poisoned data loader
+                # Create poisoned data loader with single process
                 poisoned_loader = DataLoader(
                     poisoned_dataset,
                     batch_size=self.batch_size,
                     shuffle=True,
-                    num_workers=self.num_workers,
+                    num_workers=0,
                     pin_memory=True,
+                    persistent_workers=False,
                 )
 
                 # Train model on poisoned data with checkpoint resumption
                 train_model(
                     self.model,
                     poisoned_loader,
-                    val_loader=self.test_loader,
+                    val_loader=test_loader,  # Use single process test loader
                     epochs=self.epochs,
                     device=self.device,
                     learning_rate=self.learning_rate,
                     checkpoint_dir=self.checkpoint_dir,
                     checkpoint_name=checkpoint_name,
-                    resume_training=True,  # Enable checkpoint resumption
+                    resume_training=True,
                 )
 
                 # Evaluate attack
                 attack_results = evaluate_attack(
                     self.model,
                     poisoned_loader,
-                    self.test_loader,
+                    test_loader,  # Use single process test loader
                     self.device,
                 )
                 result.poisoned_accuracy = attack_results["poisoned_accuracy"]
