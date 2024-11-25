@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 def get_dataset_loaders(
     dataset_name: str,
     batch_size: int = 128,
-    num_workers: int = 2,
+    num_workers: int = 0,
     subset_size_per_class: Optional[int] = None,
 ) -> Tuple[DataLoader, DataLoader, Dataset, Dataset]:
     """Get data loaders for the specified dataset.

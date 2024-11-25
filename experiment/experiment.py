@@ -29,7 +29,7 @@ class PoisonExperiment:
         epochs: int = 30,
         learning_rate: float = 0.001,
         batch_size: int = 128,
-        num_workers: int = 2,
+        num_workers: int = 0,
         subset_size_per_class: Optional[int] = None,
     ):
         """Initialize experiment.
