@@ -29,6 +29,19 @@ def load_all_results(base_dir: str) -> Dict[str, List[Dict]]:
     
     return all_results
 
+def simplify_label(label: str) -> str:
+    """Convert complex label to simple word."""
+    # Extract just the attack type from labels like "pgd_0.1_clean" or "label_flip_random_random_0.1_poisoned"
+    attack_type = label.split('_')[0]
+    
+    # Map to simpler names
+    mapping = {
+        'pgd': 'PGD',
+        'ga': 'Genetic',
+        'label': 'LabelFlip'  # For label_flip attacks
+    }
+    return mapping.get(attack_type, attack_type)
+
 def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], output_dir: str):
     """Create a combined plot showing classifier accuracies across all datasets."""
     # Prepare data for plotting
@@ -45,7 +58,8 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
                     'Classifier': clf_name.upper(),
                     'Accuracy': acc,
                     'Dataset': dataset_name,
-                    'Type': f"{attack_type}_{poison_ratio}_clean"
+                    'Type': f"{attack_type}_{poison_ratio}_clean",
+                    'Simple_Type': simplify_label(f"{attack_type}_{poison_ratio}_clean")
                 })
             
             # Add poisoned dataset results
@@ -54,7 +68,8 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
                     'Classifier': clf_name.upper(),
                     'Accuracy': acc,
                     'Dataset': dataset_name,
-                    'Type': f"{attack_type}_{poison_ratio}_poisoned"
+                    'Type': f"{attack_type}_{poison_ratio}_poisoned",
+                    'Simple_Type': simplify_label(f"{attack_type}_{poison_ratio}_poisoned")
                 })
     
     # Convert to DataFrame for easier plotting
@@ -71,14 +86,13 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Create the subplot
-        sns.barplot(data=dataset_df, x='Type', y='Accuracy', hue='Classifier', ax=ax)
+        sns.barplot(data=dataset_df, x='Simple_Type', y='Accuracy', hue='Classifier', ax=ax)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Dataset Performance', fontsize=14, pad=20)
-        ax.set_xlabel('Attack Type and Status', fontsize=12)
+        ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Accuracy (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=45)
-        plt.setp(ax.get_xticklabels(), ha='right')
+        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
@@ -101,6 +115,7 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
             data.append({
                 'Dataset': dataset_name,
                 'Attack': f"{attack_type}_{poison_ratio}",
+                'Simple_Attack': simplify_label(f"{attack_type}_{poison_ratio}"),
                 'Original Accuracy': result['original_accuracy'],
                 'Poisoned Accuracy': result['poisoned_accuracy'],
                 'Success Rate': result['poison_success_rate']
@@ -114,12 +129,11 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     colors = ['blue', 'red', 'green']
     
     for ax, metric, color in zip(axes, metrics, colors):
-        sns.barplot(data=df, x='Attack', y=metric, hue='Dataset', ax=ax, alpha=0.7)
+        sns.barplot(data=df, x='Simple_Attack', y=metric, hue='Dataset', ax=ax, alpha=0.7)
         ax.set_title(f'{metric} by Attack Type and Dataset', fontsize=14, pad=20)
-        ax.set_xlabel('Attack Type and Ratio', fontsize=12)
+        ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Percentage', fontsize=12)
-        ax.tick_params(axis='x', rotation=45)
-        plt.setp(ax.get_xticklabels(), ha='right')
+        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
         ax.legend(title='Dataset', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
@@ -149,6 +163,7 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
                     'Dataset': dataset_name,
                     'Classifier': clf.upper(),
                     'Attack': f"{attack_type}_{poison_ratio}",
+                    'Simple_Attack': simplify_label(f"{attack_type}_{poison_ratio}"),
                     'Robustness': robustness
                 })
     
@@ -165,14 +180,13 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Create the subplot
-        sns.barplot(data=dataset_df, x='Attack', y='Robustness', hue='Classifier', ax=ax)
+        sns.barplot(data=dataset_df, x='Simple_Attack', y='Robustness', hue='Classifier', ax=ax)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Classifier Robustness', fontsize=14, pad=20)
-        ax.set_xlabel('Attack Type and Ratio', fontsize=12)
+        ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Robustness Score (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=45)
-        plt.setp(ax.get_xticklabels(), ha='right')
+        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
