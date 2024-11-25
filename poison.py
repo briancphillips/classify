@@ -415,14 +415,14 @@ class PoisonExperiment:
         
         if self.device.type == 'cuda':
             # Log initial GPU state
-            torch.cuda.reset_peak_memory_stats(self.device)
-            initial_memory = torch.cuda.memory_allocated(self.device) / 1024**2
+            torch.cuda.reset_peak_memory_stats()
+            initial_memory = torch.cuda.memory_allocated() / 1024**2
             logger.info(f"Initial GPU Memory: {initial_memory:.1f}MB")
             
             # Set memory limits to 90% of available memory
-            total_memory = torch.cuda.get_device_properties(self.device).total_memory / 1024**2
+            total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**2
             memory_limit = int(total_memory * 0.9)  # 90% of total memory
-            torch.cuda.set_per_process_memory_fraction(0.9, self.device)
+            torch.cuda.set_per_process_memory_fraction(0.9, device=0)
             logger.info(f"Setting GPU memory limit to {memory_limit:.1f}MB out of {total_memory:.1f}MB")
         
         # Initialize optimizer and criterion
@@ -455,9 +455,9 @@ class PoisonExperiment:
                 
                 # Log GPU memory usage at start of epoch
                 if self.device.type == 'cuda':
-                    torch.cuda.reset_peak_memory_stats(self.device)
-                    memory_allocated = torch.cuda.memory_allocated(self.device) / 1024**2
-                    memory_reserved = torch.cuda.memory_reserved(self.device) / 1024**2
+                    torch.cuda.reset_peak_memory_stats()
+                    memory_allocated = torch.cuda.memory_allocated() / 1024**2
+                    memory_reserved = torch.cuda.memory_reserved() / 1024**2
                     logger.info(f"Epoch {epoch+1} Start - GPU Memory: Allocated={memory_allocated:.1f}MB, Reserved={memory_reserved:.1f}MB")
                 
                 for batch_idx, (inputs, targets) in enumerate(train_loader):
@@ -477,8 +477,8 @@ class PoisonExperiment:
                             progress = (batch_idx + 1) / total_batches * 100
                             
                             if self.device.type == 'cuda':
-                                peak_memory = torch.cuda.max_memory_allocated(self.device) / 1024**2
-                                current_memory = torch.cuda.memory_allocated(self.device) / 1024**2
+                                peak_memory = torch.cuda.max_memory_allocated() / 1024**2
+                                current_memory = torch.cuda.memory_allocated() / 1024**2
                                 logger.debug(f"Epoch {epoch+1}/{epochs} - {progress:.1f}% - Loss: {avg_loss:.4f} - Current GPU Memory: {current_memory:.1f}MB, Peak: {peak_memory:.1f}MB")
                             else:
                                 logger.debug(f"Epoch {epoch+1}/{epochs} - {progress:.1f}% - Loss: {avg_loss:.4f}")
@@ -503,8 +503,8 @@ class PoisonExperiment:
                             
                             if self.device.type == 'cuda':
                                 torch.cuda.empty_cache()
-                                current_memory = torch.cuda.memory_allocated(self.device) / 1024**2
-                                peak_memory = torch.cuda.max_memory_allocated(self.device) / 1024**2
+                                current_memory = torch.cuda.memory_allocated() / 1024**2
+                                peak_memory = torch.cuda.max_memory_allocated() / 1024**2
                                 logger.error(f"GPU OOM: Current={current_memory:.1f}MB, Peak={peak_memory:.1f}MB")
                             raise
                 
@@ -514,10 +514,10 @@ class PoisonExperiment:
                 
                 # Log GPU stats at end of epoch
                 if self.device.type == 'cuda':
-                    peak_memory = torch.cuda.max_memory_allocated(self.device) / 1024**2
-                    current_memory = torch.cuda.memory_allocated(self.device) / 1024**2
+                    peak_memory = torch.cuda.max_memory_allocated() / 1024**2
+                    current_memory = torch.cuda.memory_allocated() / 1024**2
                     logger.info(f"Epoch {epoch+1} End - GPU Memory: Current={current_memory:.1f}MB, Peak={peak_memory:.1f}MB")
-                    torch.cuda.reset_peak_memory_stats(self.device)
+                    torch.cuda.reset_peak_memory_stats()
                 
                 # Save checkpoint
                 if checkpoint_name:
