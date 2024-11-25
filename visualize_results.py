@@ -32,6 +32,9 @@ def load_all_results(base_dir: str) -> Dict[str, List[Dict]]:
 def simplify_label(label: str) -> str:
     """Convert complex label to simple word."""
     # Extract just the attack type from labels like "pgd_0.1_clean" or "label_flip_random_random_0.1_poisoned"
+    if label == "clean_baseline":
+        return "Clean"
+    
     attack_type = label.split('_')[0]
     
     # Map to simpler names
@@ -48,6 +51,17 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
     data = []
     
     for dataset_name, results in all_results.items():
+        # First, add clean baseline from the first result's clean accuracy
+        if results:
+            for clf_name, acc in results[0]['classifier_results_clean'].items():
+                data.append({
+                    'Classifier': clf_name.upper(),
+                    'Accuracy': acc,
+                    'Dataset': dataset_name,
+                    'Type': 'clean_baseline',
+                    'Simple_Type': 'Clean'
+                })
+        
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
@@ -62,7 +76,7 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
                     'Simple_Type': simplify_label(f"{attack_type}_{poison_ratio}_clean")
                 })
             
-            # Add poisoned dataset results
+            # Add poisoned dataset results only (clean baseline already added)
             for clf_name, acc in result['classifier_results_poisoned'].items():
                 data.append({
                     'Classifier': clf_name.upper(),
@@ -74,6 +88,12 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
     
     # Convert to DataFrame for easier plotting
     df = pd.DataFrame(data)
+    
+    # Sort the data to ensure Clean baseline appears first
+    df['Simple_Type'] = pd.Categorical(df['Simple_Type'], 
+                                     categories=['Clean'] + sorted(list(set(df['Simple_Type']) - {'Clean'})), 
+                                     ordered=True)
+    df = df.sort_values('Simple_Type')
     
     # Create the plot with subplots for each dataset
     num_datasets = len(all_results)
@@ -108,6 +128,18 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     data = []
     
     for dataset_name, results in all_results.items():
+        # Add clean baseline
+        if results:
+            clean_acc = results[0]['original_accuracy']
+            data.append({
+                'Dataset': dataset_name,
+                'Attack': 'clean_baseline',
+                'Simple_Attack': 'Clean',
+                'Original Accuracy': clean_acc,
+                'Poisoned Accuracy': clean_acc,
+                'Success Rate': 0
+            })
+        
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
@@ -115,13 +147,19 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
             data.append({
                 'Dataset': dataset_name,
                 'Attack': f"{attack_type}_{poison_ratio}",
-                'Simple_Attack': simplify_label(f"{attack_type}_{poison_ratio}"),
+                'Simple_Attack': simplify_label(attack_type),
                 'Original Accuracy': result['original_accuracy'],
                 'Poisoned Accuracy': result['poisoned_accuracy'],
                 'Success Rate': result['poison_success_rate']
             })
     
     df = pd.DataFrame(data)
+    
+    # Sort to ensure Clean baseline appears first
+    df['Simple_Attack'] = pd.Categorical(df['Simple_Attack'], 
+                                       categories=['Clean'] + sorted(list(set(df['Simple_Attack']) - {'Clean'})), 
+                                       ordered=True)
+    df = df.sort_values('Simple_Attack')
     
     # Create subplots for each metric
     fig, axes = plt.subplots(3, 1, figsize=(15, 18))
@@ -150,6 +188,17 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
     classifiers = ['knn', 'rf', 'svm', 'lr']
     
     for dataset_name, results in all_results.items():
+        # Add clean baseline with 100% robustness
+        if results:
+            for clf in classifiers:
+                data.append({
+                    'Dataset': dataset_name,
+                    'Classifier': clf.upper(),
+                    'Attack': 'clean_baseline',
+                    'Simple_Attack': 'Clean',
+                    'Robustness': 100  # Clean baseline has perfect robustness by definition
+                })
+        
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
@@ -163,11 +212,17 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
                     'Dataset': dataset_name,
                     'Classifier': clf.upper(),
                     'Attack': f"{attack_type}_{poison_ratio}",
-                    'Simple_Attack': simplify_label(f"{attack_type}_{poison_ratio}"),
+                    'Simple_Attack': simplify_label(attack_type),
                     'Robustness': robustness
                 })
     
     df = pd.DataFrame(data)
+    
+    # Sort to ensure Clean baseline appears first
+    df['Simple_Attack'] = pd.Categorical(df['Simple_Attack'], 
+                                       categories=['Clean'] + sorted(list(set(df['Simple_Attack']) - {'Clean'})), 
+                                       ordered=True)
+    df = df.sort_values('Simple_Attack')
     
     # Create subplot for each dataset
     num_datasets = len(all_results)
