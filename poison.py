@@ -1,33 +1,18 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from typing import List, Dict, Tuple, Optional, Union, Callable
-import logging
-import os
-import random
-import json
-from datetime import datetime
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-from enum import Enum
-from dataclasses import dataclass
-import torch.optim as optim
-from tqdm import tqdm
-import argparse
-from models import get_model, save_model, load_model, get_dataset_loaders
-import torchvision
-from torchvision import datasets, transforms
+import torchvision.transforms as transforms
+from torchvision import datasets
+import numpy as np
+import random
 import copy
-from PIL import Image
-from utils import get_device, clear_memory, move_to_device, logger
+from tqdm import tqdm
+import os
+import logging
+from typing import List, Dict, Tuple, Optional
+from datetime import datetime
+from utils import get_device, clear_memory, logger
 
 
 def setup_logging():
@@ -415,6 +400,7 @@ class PGDPoisonAttack(PoisonAttack):
         """Perform PGD attack on a single image."""
         # Initialize perturbation
         delta = torch.zeros_like(image, requires_grad=True)
+        original_label = torch.argmax(model(image), dim=1)
 
         for step in range(self.config.pgd_steps):
             # Forward pass
@@ -422,9 +408,8 @@ class PGDPoisonAttack(PoisonAttack):
             perturbed_image = torch.clamp(perturbed_image, 0, 1)
 
             output = model(perturbed_image)
-            loss = F.cross_entropy(
-                output, torch.argmax(output, dim=1)
-            )  # Maximize misclassification
+            # Try to maximize loss for the original label
+            loss = -F.cross_entropy(output, original_label)
 
             # Backward pass
             loss.backward()
