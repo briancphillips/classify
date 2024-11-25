@@ -26,6 +26,7 @@ from models import get_model, save_model, load_model, get_dataset_loaders
 import torchvision
 from torchvision import datasets, transforms
 import copy
+from PIL import Image
 
 def setup_logging():
     """Configure logging settings."""
@@ -154,86 +155,88 @@ def get_device(device_str: Optional[str] = None) -> torch.device:
         logger.info("Using CPU device")
     return device
 
-class PGDAttack(PoisonAttack):
+class PGDPoisonAttack(PoisonAttack):
     """Projected Gradient Descent Attack"""
     
-    def poison_dataset(self, dataset: Dataset) -> Tuple[Dataset, PoisonResult]:
-        """Poison a dataset using PGD attack"""
-        result = PoisonResult(self.config)
+    def __init__(self, config: PoisonConfig, device: torch.device):
+        super().__init__(config)
+        self.device = device
+
+    def poison_dataset(self, original_dataset: datasets.ImageFolder) -> Tuple[datasets.ImageFolder, PoisonResult]:
+        """Poison a dataset using PGD attack."""
+        logger.info("Starting PGD poisoning attack")
         
-        # Create a copy of the dataset
-        poisoned_dataset = copy.deepcopy(dataset)
-        num_samples = len(dataset)
+        # Calculate number of samples to poison
+        num_samples = len(original_dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
-        indices = np.random.choice(num_samples, num_poison, replace=False)
+        logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
         
-        # Get device
-        device = get_device()
-        
-        # Create a simple model for generating adversarial examples
-        temp_model = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(3*32*32, 100)  # Assuming CIFAR100 dimensions
-        ).to(device)
-        criterion = nn.CrossEntropyLoss()
-        
-        # If dataset is a Subset, get the original dataset
-        if isinstance(dataset, torch.utils.data.Subset):
-            original_dataset = dataset.dataset
-            # Map subset indices to original dataset indices
-            indices = [dataset.indices[i] for i in indices]
-        else:
-            original_dataset = dataset
-        
-        # Create a new poisoned dataset
-        poisoned_data = copy.deepcopy(original_dataset.data)
-        poisoned_targets = copy.deepcopy(original_dataset.targets)
-        
-        for idx in tqdm(indices, desc="Generating poisoned samples"):
-            x, y = dataset[idx if not isinstance(dataset, torch.utils.data.Subset) else indices.index(idx)]
-            x = x.unsqueeze(0).to(device)  # Add batch dimension
-            y = torch.tensor([y]).to(device)
-            
-            # Initialize delta randomly
-            delta = torch.zeros_like(x, requires_grad=True)
-            
-            # PGD attack loop
-            for _ in range(self.config.pgd_steps):
-                # Forward pass
-                x_adv = x + delta
-                output = temp_model(x_adv)
-                loss = criterion(output, y)
-                
-                # Backward pass
-                loss.backward()
-                
-                # Update delta
-                grad = delta.grad.sign()
-                delta.data = delta.data + self.config.pgd_alpha * grad
-                delta.data = torch.clamp(delta.data, -self.config.pgd_eps, self.config.pgd_eps)
-                delta.data = torch.clamp(x + delta.data, 0, 1) - x
-                
-                # Reset gradients
-                delta.grad.zero_()
-            
-            # Apply the perturbation
-            x_poisoned = torch.clamp(x + delta.detach(), 0, 1)
-            
-            # Convert from (C,H,W) to (H,W,C) for dataset storage
-            x_poisoned = x_poisoned.squeeze().permute(1, 2, 0).cpu().numpy()
-            poisoned_data[idx] = x_poisoned
-            result.poisoned_indices.append(idx)
-        
-        # Create a new dataset with poisoned data
+        # Create a new dataset with the same transforms
         poisoned_dataset = copy.deepcopy(original_dataset)
-        poisoned_dataset.data = poisoned_data
-        poisoned_dataset.targets = poisoned_targets
         
-        # If original dataset was a subset, create a new subset with poisoned data
-        if isinstance(dataset, torch.utils.data.Subset):
-            poisoned_dataset = torch.utils.data.Subset(poisoned_dataset, dataset.indices)
+        # Randomly select indices to poison
+        all_indices = list(range(num_samples))
+        random.shuffle(all_indices)
+        poison_indices = all_indices[:num_poison]
+        
+        # Apply PGD attack to selected samples
+        for idx in poison_indices:
+            # Get the image and label
+            img, label = poisoned_dataset[idx]
+            if isinstance(img, Image.Image):
+                img = transforms.ToTensor()(img)
+            
+            # Convert to tensor and add batch dimension
+            img = img.unsqueeze(0).to(self.device)
+            
+            # Perform PGD attack
+            perturbed_img = self._pgd_attack(img)
+            
+            # Convert back to PIL image
+            perturbed_img = transforms.ToPILImage()(perturbed_img.squeeze().cpu())
+            
+            # Replace the image in the dataset
+            # Store the path and update the image
+            img_path = poisoned_dataset.imgs[idx][0]
+            poisoned_dataset.imgs[idx] = (img_path, label)
+            poisoned_dataset.samples[idx] = (img_path, label)
+            
+            # Update the cached image if it exists
+            if hasattr(poisoned_dataset, 'cache'):
+                poisoned_dataset.cache[img_path] = perturbed_img
+        
+        result = PoisonResult(self.config)
+        result.poisoned_indices = poison_indices
+        result.poison_success_rate = 1.0  # We'll update this after evaluation
         
         return poisoned_dataset, result
+
+    def _pgd_attack(self, image: torch.Tensor) -> torch.Tensor:
+        """Perform PGD attack on a single image."""
+        # Clone the image and initialize perturbation
+        perturbed = image.clone().detach().requires_grad_(True)
+        
+        for step in range(self.config.pgd_steps):
+            # Forward pass
+            loss = -torch.norm(perturbed - image)  # Maximize L2 distance
+            
+            # Backward pass
+            loss.backward()
+            
+            # Update perturbed image
+            with torch.no_grad():
+                grad_sign = perturbed.grad.sign()
+                perturbed.data = perturbed.data + self.config.pgd_alpha * grad_sign
+                
+                # Project back to epsilon ball
+                delta = perturbed.data - image
+                delta = torch.clamp(delta, -self.config.pgd_eps, self.config.pgd_eps)
+                perturbed.data = torch.clamp(image + delta, 0, 1)
+                
+                # Reset gradients
+                perturbed.grad.zero_()
+        
+        return perturbed.detach()
 
 class GeneticAttack(PoisonAttack):
     """Genetic Algorithm Attack"""
@@ -366,10 +369,10 @@ class LabelFlipAttack(PoisonAttack):
         result.poisoned_indices = indices.tolist()
         return dataset, result
 
-def create_poison_attack(config: PoisonConfig) -> PoisonAttack:
+def create_poison_attack(config: PoisonConfig, device: torch.device) -> PoisonAttack:
     """Factory function to create poison attacks"""
     if config.poison_type == PoisonType.PGD:
-        return PGDAttack(config)
+        return PGDPoisonAttack(config, device)
     elif config.poison_type == PoisonType.GA:
         return GeneticAttack(config)
     elif config.poison_type.value.startswith("label_flip"):
@@ -753,7 +756,7 @@ class PoisonExperiment:
             logger.info(f"Running experiment with config: {config}")
             
             # Create and apply poison attack
-            attack = create_poison_attack(config)
+            attack = create_poison_attack(config, self.device)
             poisoned_dataset, result = attack.poison_dataset(self.train_dataset)
             logger.debug(f"Created poisoned training dataset with {len(poisoned_dataset)} samples")
             
