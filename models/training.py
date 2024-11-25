@@ -23,7 +23,8 @@ def train_model(
     learning_rate: float = 0.001,
     checkpoint_dir: Optional[str] = None,
     checkpoint_name: Optional[str] = None,
-) -> Dict[str, List[float]]:
+    resume_training: bool = False,
+) -> Tuple[int, float]:
     """Train model with improved stability and monitoring.
 
     Args:
@@ -37,9 +38,10 @@ def train_model(
         learning_rate: Learning rate for optimizer
         checkpoint_dir: Optional directory to save checkpoints
         checkpoint_name: Optional name for checkpoint files
+        resume_training: Whether to try to resume from checkpoint
 
     Returns:
-        dict: Training history with loss values
+        tuple: (last_epoch, best_loss)
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,86 +50,134 @@ def train_model(
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5)
 
-    history = {"train_loss": [], "val_loss": []}
+    start_epoch = 0
     best_val_loss = float("inf")
     patience_counter = 0
+    history = {"train_loss": [], "val_loss": []}
 
-    for epoch in range(epochs):
+    # Try to load checkpoint if resuming
+    if resume_training and checkpoint_dir and checkpoint_name:
+        try:
+            start_epoch, best_val_loss = load_checkpoint(
+                model,
+                checkpoint_dir,
+                checkpoint_name,
+                optimizer=optimizer,
+                device=device,
+                load_best=False,
+            )
+            logger.info(f"Resumed training from epoch {start_epoch + 1}")
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint: {str(e)}")
+            start_epoch = 0
+
+    for epoch in range(start_epoch, epochs):
         # Training phase
         model.train()
         train_loss = 0
         total_batches = len(train_loader)
 
-        for batch_idx, (data, target) in enumerate(
-            tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
-        ):
-            data, target = move_to_device(data, device), move_to_device(target, device)
+        try:
+            for batch_idx, (data, target) in enumerate(
+                tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
+            ):
+                data, target = move_to_device(data, device), move_to_device(
+                    target, device
+                )
 
-            optimizer.zero_grad()
-            output = model(data)
-            loss = F.cross_entropy(output, target)
-            loss.backward()
+                optimizer.zero_grad()
+                output = model(data)
+                loss = F.cross_entropy(output, target)
+                loss.backward()
 
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
 
-            optimizer.step()
-            train_loss += loss.item()
+                optimizer.step()
+                train_loss += loss.item()
 
-            if (batch_idx + 1) % 10 == 0:
-                clear_memory(device)
+                # Save checkpoint every 100 batches
+                if (batch_idx + 1) % 100 == 0:
+                    if checkpoint_dir and checkpoint_name:
+                        save_checkpoint(
+                            model,
+                            checkpoint_dir,
+                            checkpoint_name,
+                            optimizer=optimizer,
+                            epoch=epoch,
+                            loss=train_loss / (batch_idx + 1),
+                        )
 
-        train_loss /= len(train_loader)
-        history["train_loss"].append(train_loss)
+                if (batch_idx + 1) % 10 == 0:
+                    clear_memory(device)
 
-        # Validation phase
-        if val_loader is not None:
-            val_loss = validate_model(model, val_loader, device)
-            history["val_loss"].append(val_loss)
+            train_loss /= len(train_loader)
+            history["train_loss"].append(train_loss)
 
-            scheduler.step(val_loss)
+            # Validation phase
+            if val_loader is not None:
+                val_loss = validate_model(model, val_loader, device)
+                history["val_loss"].append(val_loss)
 
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                if checkpoint_dir and checkpoint_name:
-                    save_checkpoint(
-                        model,
-                        checkpoint_dir,
-                        checkpoint_name,
-                        optimizer=optimizer,
-                        epoch=epoch,
-                        loss=val_loss,
-                        is_best=True,
-                    )
+                scheduler.step(val_loss)
+
+                # Early stopping and checkpointing
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    if checkpoint_dir and checkpoint_name:
+                        save_checkpoint(
+                            model,
+                            checkpoint_dir,
+                            checkpoint_name,
+                            optimizer=optimizer,
+                            epoch=epoch,
+                            loss=val_loss,
+                            is_best=True,
+                        )
+                else:
+                    patience_counter += 1
+
+                if patience_counter >= early_stopping_patience:
+                    logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                    break
+
+                logger.info(
+                    f"Epoch {epoch+1}/{epochs} - "
+                    f"Train Loss: {train_loss:.4f} - "
+                    f"Val Loss: {val_loss:.4f}"
+                )
             else:
-                patience_counter += 1
+                logger.info(
+                    f"Epoch {epoch+1}/{epochs} - " f"Train Loss: {train_loss:.4f}"
+                )
 
-            if patience_counter >= early_stopping_patience:
-                logger.info(f"Early stopping triggered at epoch {epoch+1}")
-                break
+            # Save regular checkpoint at end of epoch
+            if checkpoint_dir and checkpoint_name:
+                save_checkpoint(
+                    model,
+                    checkpoint_dir,
+                    checkpoint_name,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    loss=train_loss,
+                )
 
-            logger.info(
-                f"Epoch {epoch+1}/{epochs} - "
-                f"Train Loss: {train_loss:.4f} - "
-                f"Val Loss: {val_loss:.4f}"
-            )
-        else:
-            logger.info(f"Epoch {epoch+1}/{epochs} - " f"Train Loss: {train_loss:.4f}")
+        except Exception as e:
+            logger.error(f"Error during training: {str(e)}")
+            # Save checkpoint on error
+            if checkpoint_dir and checkpoint_name:
+                save_checkpoint(
+                    model,
+                    checkpoint_dir,
+                    checkpoint_name,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    loss=train_loss if "train_loss" in locals() else float("inf"),
+                )
+            raise e
 
-        # Save regular checkpoint
-        if checkpoint_dir and checkpoint_name:
-            save_checkpoint(
-                model,
-                checkpoint_dir,
-                checkpoint_name,
-                optimizer=optimizer,
-                epoch=epoch,
-                loss=train_loss,
-            )
-
-    return history
+    return epoch + 1, best_val_loss
 
 
 def validate_model(

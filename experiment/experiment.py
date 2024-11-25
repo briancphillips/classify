@@ -88,7 +88,9 @@ class PoisonExperiment:
         # First train clean model
         logger.info("Training clean model...")
         clean_checkpoint_path = os.path.join(self.checkpoint_dir, "clean_model")
-        train_model(
+
+        # Try to load clean model checkpoint
+        clean_epoch, clean_loss = train_model(
             self.model,
             self.train_loader,
             val_loader=self.test_loader,
@@ -97,6 +99,7 @@ class PoisonExperiment:
             learning_rate=self.learning_rate,
             checkpoint_dir=self.checkpoint_dir,
             checkpoint_name="clean_model",
+            resume_training=True,  # Enable checkpoint resumption
         )
 
         # Evaluate clean model
@@ -106,56 +109,64 @@ class PoisonExperiment:
         # Run each poisoning configuration
         for config in self.configs:
             logger.info(f"\nRunning experiment with config: {config}")
-
-            # Create attack instance
-            attack = create_poison_attack(config, self.device)
-
-            # Run poisoning attack
-            poisoned_dataset, result = attack.poison_dataset(
-                self.train_dataset, self.model
-            )
-
-            # Create poisoned data loader
-            poisoned_loader = DataLoader(
-                poisoned_dataset,
-                batch_size=self.batch_size,
-                shuffle=True,
-                num_workers=self.num_workers,
-                pin_memory=True,
-            )
-
-            # Train model on poisoned data
             checkpoint_name = f"poisoned_{config.poison_type.value}"
-            train_model(
-                self.model,
-                poisoned_loader,
-                val_loader=self.test_loader,
-                epochs=self.epochs,
-                device=self.device,
-                learning_rate=self.learning_rate,
-                checkpoint_dir=self.checkpoint_dir,
-                checkpoint_name=checkpoint_name,
-            )
 
-            # Evaluate attack
-            attack_results = evaluate_attack(
-                self.model,
-                poisoned_loader,
-                self.test_loader,
-                self.device,
-            )
-            result.poisoned_accuracy = attack_results["poisoned_accuracy"]
-            result.original_accuracy = attack_results["clean_accuracy"]
+            try:
+                # Create attack instance
+                attack = create_poison_attack(config, self.device)
 
-            # Save results
-            result.save(self.output_dir)
-            results.append(result)
+                # Run poisoning attack
+                poisoned_dataset, result = attack.poison_dataset(
+                    self.train_dataset, self.model
+                )
 
-            # Clear memory
-            clear_memory(self.device)
+                # Create poisoned data loader
+                poisoned_loader = DataLoader(
+                    poisoned_dataset,
+                    batch_size=self.batch_size,
+                    shuffle=True,
+                    num_workers=self.num_workers,
+                    pin_memory=True,
+                )
+
+                # Train model on poisoned data with checkpoint resumption
+                train_model(
+                    self.model,
+                    poisoned_loader,
+                    val_loader=self.test_loader,
+                    epochs=self.epochs,
+                    device=self.device,
+                    learning_rate=self.learning_rate,
+                    checkpoint_dir=self.checkpoint_dir,
+                    checkpoint_name=checkpoint_name,
+                    resume_training=True,  # Enable checkpoint resumption
+                )
+
+                # Evaluate attack
+                attack_results = evaluate_attack(
+                    self.model,
+                    poisoned_loader,
+                    self.test_loader,
+                    self.device,
+                )
+                result.poisoned_accuracy = attack_results["poisoned_accuracy"]
+                result.original_accuracy = attack_results["clean_accuracy"]
+
+                # Save results
+                result.save(self.output_dir)
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Error during poisoning experiment: {str(e)}")
+                continue
+
+            finally:
+                # Clear memory
+                clear_memory(self.device)
 
         # Plot results
-        plot_results(results, self.output_dir)
-        plot_attack_comparison(results, self.output_dir)
+        if results:
+            plot_results(results, self.output_dir)
+            plot_attack_comparison(results, self.output_dir)
 
         return results
