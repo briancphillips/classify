@@ -66,10 +66,10 @@ class GradientAscentAttack(PoisonAttack):
         poisoned_data = data.clone()
         poisoned_data = move_to_device(poisoned_data, self.device)
 
-        # Gradient ascent parameters
-        num_steps = self.config.ga_pop_size
-        num_iterations = self.config.ga_generations
-        learning_rate = self.config.ga_mutation_rate
+        # Get attack parameters from config
+        steps_per_iter = self.config.ga_steps  # Number of gradient steps per iteration
+        num_iterations = self.config.ga_iterations  # Number of outer iterations
+        learning_rate = self.config.ga_lr  # Learning rate for gradient ascent
         eps = 0.1  # Maximum perturbation size
 
         for idx in tqdm(indices, desc="Applying Gradient Ascent"):
@@ -78,7 +78,7 @@ class GradientAscentAttack(PoisonAttack):
 
             # Gradient ascent loop
             for iteration in range(num_iterations):
-                for step in range(num_steps):
+                for step in range(steps_per_iter):
                     grad = self._compute_gradient(x, original)
                     x = self._step(x, grad, learning_rate)
                     # Clip perturbation size

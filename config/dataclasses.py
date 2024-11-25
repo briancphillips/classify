@@ -15,17 +15,17 @@ class PoisonConfig:
 
     poison_type: PoisonType
     poison_ratio: float  # Percentage of dataset to poison (0.0 to 1.0)
-    # PGD specific parameters
+    # PGD attack parameters
     pgd_eps: Optional[float] = 0.3  # Epsilon for PGD attack
-    pgd_alpha: Optional[float] = 0.01  # Step size for PGD
-    pgd_steps: Optional[int] = 40  # Number of PGD steps
-    # GA specific parameters
-    ga_pop_size: Optional[int] = 50  # Population size for GA
-    ga_generations: Optional[int] = 100  # Number of generations
-    ga_mutation_rate: Optional[float] = 0.1
-    # Label flipping specific parameters
-    source_class: Optional[int] = None  # Source class for source->target flipping
-    target_class: Optional[int] = None  # Target class for targeted flipping
+    pgd_alpha: Optional[float] = 0.01  # Step size for PGD attack
+    pgd_steps: Optional[int] = 40  # Number of steps for PGD attack
+    # Gradient Ascent attack parameters
+    ga_steps: Optional[int] = 50  # Number of gradient steps per iteration
+    ga_iterations: Optional[int] = 100  # Number of outer iterations
+    ga_lr: Optional[float] = 0.1  # Learning rate for gradient ascent
+    # Attack targeting parameters
+    source_class: Optional[int] = None  # Source class for targeted attacks
+    target_class: Optional[int] = None  # Target class for targeted attacks
     random_seed: Optional[int] = 42  # Random seed for reproducibility
 
 

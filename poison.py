@@ -140,7 +140,7 @@ def create_attack_configs(args) -> List[PoisonConfig]:
     elif args.attack == "ga":
         configs.append(
             PoisonConfig(
-                poison_type=PoisonType.GA,
+                poison_type=PoisonType.GRADIENT_ASCENT,
                 poison_ratio=args.poison_ratio,
                 ga_pop_size=50,
                 ga_generations=100,
