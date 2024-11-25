@@ -5,7 +5,6 @@ import json
 import glob
 import argparse
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
 from typing import List, Dict, Tuple
 
@@ -47,15 +46,32 @@ def simplify_label(label: str) -> str:
 
 def set_plot_style():
     """Set the global plot style for better visualization."""
-    plt.style.use('seaborn')
-    # Remove top and right spines
+    # Set clean, modern style parameters manually
     plt.rcParams['axes.spines.top'] = False
     plt.rcParams['axes.spines.right'] = False
-    # Use a cleaner grid
+    plt.rcParams['axes.grid'] = True
     plt.rcParams['grid.linestyle'] = ':'
     plt.rcParams['grid.alpha'] = 0.5
+    plt.rcParams['grid.color'] = '#cccccc'
+    plt.rcParams['axes.facecolor'] = 'white'
+    plt.rcParams['figure.facecolor'] = 'white'
+    plt.rcParams['axes.edgecolor'] = '#333333'
+    plt.rcParams['axes.labelcolor'] = '#333333'
+    plt.rcParams['text.color'] = '#333333'
+    plt.rcParams['xtick.color'] = '#333333'
+    plt.rcParams['ytick.color'] = '#333333'
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans']
+    
     # Modern color palette
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=['#2ecc71', '#3498db', '#e74c3c', '#f1c40f', '#9b59b6', '#1abc9c'])
+    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=[
+        '#2ecc71',  # Green
+        '#3498db',  # Blue
+        '#e74c3c',  # Red
+        '#f1c40f',  # Yellow
+        '#9b59b6',  # Purple
+        '#1abc9c'   # Turquoise
+    ])
 
 def create_attack_label(attack_type: str, poison_ratio: float = None) -> str:
     """Create a formatted attack label with poison ratio if applicable."""
@@ -116,8 +132,7 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Create the subplot with custom style
-        bars = sns.barplot(data=dataset_df, x='Display_Label', y='Accuracy', 
-                          hue='Classifier', ax=ax, alpha=0.8)
+        bars = plt.bar(dataset_df['Display_Label'], dataset_df['Accuracy'], ax=ax, alpha=0.8)
         
         # Remove the top line of bars
         for patch in ax.patches:
@@ -132,7 +147,6 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Accuracy (%)', fontsize=12)
         ax.grid(axis='y', alpha=0.3)
-        ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(dataset_df['Accuracy']) * 1.15)  # Add 15% padding for labels
@@ -192,8 +206,7 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     colors = ['#2ecc71', '#e74c3c', '#f1c40f']  # Green, Red, Yellow
     
     for ax, metric, color in zip(axes, metrics, colors):
-        bars = sns.barplot(data=df, x='Display_Label', y=metric, hue='Dataset', 
-                          ax=ax, alpha=0.8, palette='Set2')
+        bars = plt.bar(df['Display_Label'], df[metric], ax=ax, alpha=0.8, color=color)
         
         # Remove the top line of bars
         for patch in ax.patches:
@@ -207,7 +220,6 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Percentage', fontsize=12)
         ax.grid(axis='y', alpha=0.3)
-        ax.legend(title='Dataset', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(df[metric]) * 1.15)  # Add 15% padding for labels
@@ -276,8 +288,7 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Create the subplot with custom style
-        bars = sns.barplot(data=dataset_df, x='Display_Label', y='Robustness', 
-                          hue='Classifier', ax=ax, alpha=0.8)
+        bars = plt.bar(dataset_df['Display_Label'], dataset_df['Robustness'], ax=ax, alpha=0.8)
         
         # Remove the top line of bars
         for patch in ax.patches:
@@ -292,7 +303,6 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Robustness Score (%)', fontsize=12)
         ax.grid(axis='y', alpha=0.3)
-        ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(dataset_df['Robustness']) * 1.15)  # Add 15% padding for labels
