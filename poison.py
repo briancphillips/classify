@@ -388,7 +388,7 @@ class PGDPoisonAttack(PoisonAttack):
             # Remove batch dimension and move back to CPU
             perturbed_img = perturbed_img.squeeze(0).cpu()
 
-            # Update the dataset
+            # Update the dataset based on its type
             if isinstance(poisoned_dataset, datasets.ImageFolder):
                 # For ImageFolder datasets
                 img_path = poisoned_dataset.imgs[idx][0]
@@ -398,11 +398,21 @@ class PGDPoisonAttack(PoisonAttack):
                     poisoned_dataset.cache[img_path] = transforms.ToPILImage()(
                         perturbed_img
                     )
+            elif isinstance(poisoned_dataset, datasets.GTSRB):
+                # For GTSRB dataset
+                if hasattr(poisoned_dataset, "_samples"):
+                    # Get the original sample info
+                    img_path, target = poisoned_dataset._samples[idx]
+                    # Save the perturbed image
+                    perturbed_pil = transforms.ToPILImage()(perturbed_img)
+                    perturbed_pil.save(img_path)
+                    # Update the sample info
+                    poisoned_dataset._samples[idx] = (img_path, target)
+                else:
+                    logger.warning(f"Unexpected GTSRB dataset structure at index {idx}")
             else:
-                # For other dataset types (e.g., GTSRB)
-                poisoned_dataset.data[idx] = perturbed_img
-                if hasattr(poisoned_dataset, "targets"):
-                    poisoned_dataset.targets[idx] = label
+                logger.warning(f"Unsupported dataset type: {type(poisoned_dataset)}")
+                continue
 
         # Create result object
         result = PoisonResult(self.config)
