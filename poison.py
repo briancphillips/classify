@@ -181,12 +181,19 @@ class PGDPoisonAttack(PoisonAttack):
         
         # Apply PGD attack to selected samples
         for idx in poison_indices:
-            # Get the image and label
-            img, label = poisoned_dataset[idx]
-            if isinstance(img, Image.Image):
-                img = transforms.ToTensor()(img)
+            # Get the image path and label
+            if hasattr(dataset, 'imgs'):  # ImageFolder dataset
+                img_path = dataset.imgs[idx][0]
+                label = dataset.imgs[idx][1]
+            else:  # GTSRB or similar dataset
+                img_path = dataset.samples[idx][0]
+                label = dataset.samples[idx][1]
+            
+            # Load the image
+            img = Image.open(img_path)
             
             # Convert to tensor and add batch dimension
+            img = transforms.ToTensor()(img)
             img = img.unsqueeze(0).to(self.device)
             
             # Perform PGD attack
@@ -197,9 +204,11 @@ class PGDPoisonAttack(PoisonAttack):
             
             # Replace the image in the dataset
             # Store the path and update the image
-            img_path = poisoned_dataset.imgs[idx][0]
-            poisoned_dataset.imgs[idx] = (img_path, label)
-            poisoned_dataset.samples[idx] = (img_path, label)
+            if hasattr(poisoned_dataset, 'imgs'):
+                poisoned_dataset.imgs[idx] = (img_path, label)
+                poisoned_dataset.samples[idx] = (img_path, label)
+            else:
+                poisoned_dataset.samples[idx] = (img_path, label)
             
             # Update the cached image if it exists
             if hasattr(poisoned_dataset, 'cache'):
