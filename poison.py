@@ -182,12 +182,12 @@ class PGDPoisonAttack(PoisonAttack):
         # Apply PGD attack to selected samples
         for idx in poison_indices:
             # Get the image path and label
-            if hasattr(dataset, 'imgs'):  # ImageFolder dataset
-                img_path = dataset.imgs[idx][0]
-                label = dataset.imgs[idx][1]
+            if hasattr(poisoned_dataset, 'imgs'):  # ImageFolder dataset
+                img_path = poisoned_dataset.imgs[idx][0]
+                label = poisoned_dataset.imgs[idx][1]
             else:  # GTSRB or similar dataset
-                img_path = dataset.samples[idx][0]
-                label = dataset.samples[idx][1]
+                img_path = poisoned_dataset.samples[idx][0]
+                label = poisoned_dataset.samples[idx][1]
             
             # Load the image
             img = Image.open(img_path)
