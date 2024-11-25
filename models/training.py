@@ -54,6 +54,7 @@ def train_model(
     best_val_loss = float("inf")
     patience_counter = 0
     history = {"train_loss": [], "val_loss": []}
+    last_epoch = 0
 
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
@@ -67,17 +68,19 @@ def train_model(
                 load_best=False,
             )
             logger.info(f"Resumed training from epoch {start_epoch + 1}")
+            last_epoch = start_epoch
         except Exception as e:
             logger.warning(f"Failed to load checkpoint: {str(e)}")
             start_epoch = 0
 
-    for epoch in range(start_epoch, epochs):
-        # Training phase
-        model.train()
-        train_loss = 0
-        total_batches = len(train_loader)
+    try:
+        for epoch in range(start_epoch, epochs):
+            last_epoch = epoch  # Update last_epoch at the start of each epoch
+            # Training phase
+            model.train()
+            train_loss = 0
+            total_batches = len(train_loader)
 
-        try:
             for batch_idx, (data, target) in enumerate(
                 tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
             ):
@@ -163,21 +166,21 @@ def train_model(
                     loss=train_loss,
                 )
 
-        except Exception as e:
-            logger.error(f"Error during training: {str(e)}")
-            # Save checkpoint on error
-            if checkpoint_dir and checkpoint_name:
-                save_checkpoint(
-                    model,
-                    checkpoint_dir,
-                    checkpoint_name,
-                    optimizer=optimizer,
-                    epoch=epoch,
-                    loss=train_loss if "train_loss" in locals() else float("inf"),
-                )
-            raise e
+    except Exception as e:
+        logger.error(f"Error during training: {str(e)}")
+        # Save checkpoint on error
+        if checkpoint_dir and checkpoint_name:
+            save_checkpoint(
+                model,
+                checkpoint_dir,
+                checkpoint_name,
+                optimizer=optimizer,
+                epoch=last_epoch,
+                loss=train_loss if "train_loss" in locals() else float("inf"),
+            )
+        raise e
 
-    return epoch + 1, best_val_loss
+    return last_epoch + 1, best_val_loss
 
 
 def validate_model(
