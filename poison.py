@@ -27,20 +27,22 @@ import torchvision
 from torchvision import datasets, transforms
 import copy
 
-# Configure logging with more detailed format
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[
-        logging.FileHandler('debug.log'),
-        logging.StreamHandler()
-    ]
-)
+def setup_logging():
+    """Configure logging settings."""
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    
+    # Set PIL logging to INFO to suppress debug messages
+    logging.getLogger('PIL').setLevel(logging.INFO)
+    
+    # Get our logger
+    return logging.getLogger(__name__)
 
-# Set matplotlib logger to WARNING level to suppress font debug messages
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = setup_logging()
 
 class PoisonType(Enum):
     """Types of poisoning attacks"""
