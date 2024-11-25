@@ -45,9 +45,27 @@ def simplify_label(label: str) -> str:
     }
     return mapping.get(attack_type, attack_type)
 
+def set_plot_style():
+    """Set the global plot style for better visualization."""
+    plt.style.use('seaborn')
+    # Remove top and right spines
+    plt.rcParams['axes.spines.top'] = False
+    plt.rcParams['axes.spines.right'] = False
+    # Use a cleaner grid
+    plt.rcParams['grid.linestyle'] = ':'
+    plt.rcParams['grid.alpha'] = 0.5
+    # Modern color palette
+    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=['#2ecc71', '#3498db', '#e74c3c', '#f1c40f', '#9b59b6', '#1abc9c'])
+
+def create_attack_label(attack_type: str, poison_ratio: float = None) -> str:
+    """Create a formatted attack label with poison ratio if applicable."""
+    if attack_type == "Clean":
+        return "Clean"
+    return f"{attack_type}\n({poison_ratio*100:.0f}%)" if poison_ratio is not None else attack_type
+
 def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], output_dir: str):
     """Create a combined plot showing classifier accuracies across all datasets."""
-    # Prepare data for plotting
+    set_plot_style()
     data = []
     
     for dataset_name, results in all_results.items():
@@ -59,34 +77,26 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
                     'Accuracy': acc,
                     'Dataset': dataset_name,
                     'Type': 'clean_baseline',
-                    'Simple_Type': 'Clean'
+                    'Simple_Type': 'Clean',
+                    'Display_Label': 'Clean'
                 })
         
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
             
-            # Add clean dataset results
-            for clf_name, acc in result['classifier_results_clean'].items():
-                data.append({
-                    'Classifier': clf_name.upper(),
-                    'Accuracy': acc,
-                    'Dataset': dataset_name,
-                    'Type': f"{attack_type}_{poison_ratio}_clean",
-                    'Simple_Type': simplify_label(f"{attack_type}_{poison_ratio}_clean")
-                })
-            
             # Add poisoned dataset results only (clean baseline already added)
             for clf_name, acc in result['classifier_results_poisoned'].items():
+                simple_type = simplify_label(attack_type)
                 data.append({
                     'Classifier': clf_name.upper(),
                     'Accuracy': acc,
                     'Dataset': dataset_name,
                     'Type': f"{attack_type}_{poison_ratio}_poisoned",
-                    'Simple_Type': simplify_label(f"{attack_type}_{poison_ratio}_poisoned")
+                    'Simple_Type': simple_type,
+                    'Display_Label': create_attack_label(simple_type, poison_ratio)
                 })
     
-    # Convert to DataFrame for easier plotting
     df = pd.DataFrame(data)
     
     # Sort the data to ensure Clean baseline appears first
@@ -105,26 +115,38 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         # Filter data for this dataset
         dataset_df = df[df['Dataset'] == dataset_name]
         
-        # Create the subplot
-        sns.barplot(data=dataset_df, x='Simple_Type', y='Accuracy', hue='Classifier', ax=ax)
+        # Create the subplot with custom style
+        bars = sns.barplot(data=dataset_df, x='Display_Label', y='Accuracy', 
+                          hue='Classifier', ax=ax, alpha=0.8)
+        
+        # Remove the top line of bars
+        for patch in ax.patches:
+            patch.set_edgecolor('none')
+        
+        # Add value labels on top of bars
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.1f%%', padding=3)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Dataset Performance', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Accuracy (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
+        ax.grid(axis='y', alpha=0.3)
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Set y-axis to start from 0
+        ax.set_ylim(0, max(dataset_df['Accuracy']) * 1.15)  # Add 15% padding for labels
     
     plt.tight_layout()
     
-    # Save the plot
+    # Save the plot with high DPI
     plot_path = os.path.join(output_dir, 'combined_classifier_comparison.png')
-    plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved combined classifier comparison plot to {plot_path}")
 
 def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: str):
     """Create a plot showing the effectiveness of different attacks across datasets."""
+    set_plot_style()
     data = []
     
     for dataset_name, results in all_results.items():
@@ -135,6 +157,7 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
                 'Dataset': dataset_name,
                 'Attack': 'clean_baseline',
                 'Simple_Attack': 'Clean',
+                'Display_Label': 'Clean',
                 'Original Accuracy': clean_acc,
                 'Poisoned Accuracy': clean_acc,
                 'Success Rate': 0
@@ -143,11 +166,13 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
+            simple_type = simplify_label(attack_type)
             
             data.append({
                 'Dataset': dataset_name,
                 'Attack': f"{attack_type}_{poison_ratio}",
-                'Simple_Attack': simplify_label(attack_type),
+                'Simple_Attack': simple_type,
+                'Display_Label': create_attack_label(simple_type, poison_ratio),
                 'Original Accuracy': result['original_accuracy'],
                 'Poisoned Accuracy': result['poisoned_accuracy'],
                 'Success Rate': result['poison_success_rate']
@@ -164,26 +189,39 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     # Create subplots for each metric
     fig, axes = plt.subplots(3, 1, figsize=(15, 18))
     metrics = ['Original Accuracy', 'Poisoned Accuracy', 'Success Rate']
-    colors = ['blue', 'red', 'green']
+    colors = ['#2ecc71', '#e74c3c', '#f1c40f']  # Green, Red, Yellow
     
     for ax, metric, color in zip(axes, metrics, colors):
-        sns.barplot(data=df, x='Simple_Attack', y=metric, hue='Dataset', ax=ax, alpha=0.7)
+        bars = sns.barplot(data=df, x='Display_Label', y=metric, hue='Dataset', 
+                          ax=ax, alpha=0.8, palette='Set2')
+        
+        # Remove the top line of bars
+        for patch in ax.patches:
+            patch.set_edgecolor('none')
+        
+        # Add value labels on top of bars
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.1f%%', padding=3)
+        
         ax.set_title(f'{metric} by Attack Type and Dataset', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Percentage', fontsize=12)
-        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
+        ax.grid(axis='y', alpha=0.3)
         ax.legend(title='Dataset', bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Set y-axis to start from 0
+        ax.set_ylim(0, max(df[metric]) * 1.15)  # Add 15% padding for labels
     
     plt.tight_layout()
     
-    # Save the plot
+    # Save the plot with high DPI
     plot_path = os.path.join(output_dir, 'attack_effectiveness.png')
-    plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved attack effectiveness plot to {plot_path}")
 
 def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: str):
     """Create a plot showing classifier robustness against different attacks across datasets."""
+    set_plot_style()
     data = []
     classifiers = ['knn', 'rf', 'svm', 'lr']
     
@@ -196,12 +234,14 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
                     'Classifier': clf.upper(),
                     'Attack': 'clean_baseline',
                     'Simple_Attack': 'Clean',
+                    'Display_Label': 'Clean',
                     'Robustness': 100  # Clean baseline has perfect robustness by definition
                 })
         
         for result in results:
             attack_type = result['config']['poison_type']
             poison_ratio = result['config']['poison_ratio']
+            simple_type = simplify_label(attack_type)
             
             for clf in classifiers:
                 clean_acc = result['classifier_results_clean'].get(clf, 0)
@@ -212,7 +252,8 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
                     'Dataset': dataset_name,
                     'Classifier': clf.upper(),
                     'Attack': f"{attack_type}_{poison_ratio}",
-                    'Simple_Attack': simplify_label(attack_type),
+                    'Simple_Attack': simple_type,
+                    'Display_Label': create_attack_label(simple_type, poison_ratio),
                     'Robustness': robustness
                 })
     
@@ -234,23 +275,34 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         # Filter data for this dataset
         dataset_df = df[df['Dataset'] == dataset_name]
         
-        # Create the subplot
-        sns.barplot(data=dataset_df, x='Simple_Attack', y='Robustness', hue='Classifier', ax=ax)
+        # Create the subplot with custom style
+        bars = sns.barplot(data=dataset_df, x='Display_Label', y='Robustness', 
+                          hue='Classifier', ax=ax, alpha=0.8)
+        
+        # Remove the top line of bars
+        for patch in ax.patches:
+            patch.set_edgecolor('none')
+        
+        # Add value labels on top of bars
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.1f%%', padding=3)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Classifier Robustness', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Robustness Score (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=0)  # No need to rotate simple labels
+        ax.grid(axis='y', alpha=0.3)
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Set y-axis to start from 0
+        ax.set_ylim(0, max(dataset_df['Robustness']) * 1.15)  # Add 15% padding for labels
     
     plt.tight_layout()
     
-    # Save the plot
+    # Save the plot with high DPI
     plot_path = os.path.join(output_dir, 'classifier_robustness.png')
-    plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved classifier robustness plot to {plot_path}")
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize poison attack results across datasets')
