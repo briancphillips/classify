@@ -25,6 +25,7 @@ import tarfile
 import io
 import copy
 import torch.backends.mps
+from typing import Optional, Dict, Tuple
 
 # Define transforms for each dataset
 CIFAR100_TRANSFORM_TRAIN = transforms.Compose([
@@ -822,14 +823,26 @@ def get_model(dataset_name):
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
-def save_model(model, path, metadata=None):
+def save_model(model: nn.Module, path: str, metadata: Optional[Dict] = None, 
+              optimizer: Optional[torch.optim.Optimizer] = None,
+              epoch: Optional[int] = None,
+              loss: Optional[float] = None) -> None:
     """Save model and training metadata to disk.
     
     Args:
         model: The PyTorch model to save
-        path: Path to save the model to
+        path: Path to save the model to (should end in .pt)
         metadata: Optional dict of metadata to save with the model
+        optimizer: Optional optimizer state to save
+        epoch: Optional epoch number
+        loss: Optional loss value
+        
+    Raises:
+        ValueError: If path doesn't end with .pt
     """
+    if not path.endswith('.pt'):
+        raise ValueError("Checkpoint path must end with .pt extension")
+        
     if metadata is None:
         metadata = {}
     
@@ -840,27 +853,74 @@ def save_model(model, path, metadata=None):
         metadata['dataset_name'] = 'gtsrb'
     elif isinstance(model, ImagenetteClassifier):
         metadata['dataset_name'] = 'imagenette'
-    
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save({
+    else:
+        raise ValueError(f"Unknown model type: {type(model)}")
+        
+    # Prepare checkpoint data
+    checkpoint = {
         'model_state_dict': model.state_dict(),
         'metadata': metadata
-    }, path)
+    }
+    
+    if optimizer is not None:
+        checkpoint['optimizer_state_dict'] = optimizer.state_dict()
+    if epoch is not None:
+        checkpoint['epoch'] = epoch
+    if loss is not None:
+        checkpoint['loss'] = loss
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    # Save checkpoint
+    torch.save(checkpoint, path)
 
-def load_model(path):
-    """Load a saved model and its metadata.
+def load_model(path: str, device: Optional[torch.device] = None) -> Tuple[nn.Module, Dict]:
+    """Load a model from a checkpoint file.
     
     Args:
-        path: Path to the saved model
+        path: Path to the checkpoint file (.pt)
+        device: Optional device to load the model to
         
     Returns:
         tuple: (model, metadata)
+            - model: The loaded PyTorch model
+            - metadata: Dictionary containing checkpoint metadata
+            
+    Raises:
+        ValueError: If checkpoint format is invalid or file not found
     """
-    checkpoint = torch.load(path)
-    dataset_name = checkpoint['metadata'].get('dataset_name', 'cifar100')
-    model = get_model(dataset_name)
+    if not path.endswith('.pt'):
+        raise ValueError("Checkpoint path must end with .pt extension")
+        
+    if not os.path.exists(path):
+        raise ValueError(f"Checkpoint file not found: {path}")
+        
+    try:
+        checkpoint = torch.load(path, map_location=device)
+    except Exception as e:
+        raise ValueError(f"Failed to load checkpoint: {e}")
+        
+    if not isinstance(checkpoint, dict):
+        raise ValueError("Invalid checkpoint format - expected dictionary")
+        
+    if 'metadata' not in checkpoint:
+        raise ValueError("Invalid checkpoint format - missing metadata")
+    metadata = checkpoint['metadata']
+    
+    if 'model_state_dict' not in checkpoint:
+        raise ValueError("Invalid checkpoint format - missing model_state_dict")
+        
+    if 'dataset_name' not in metadata:
+        raise ValueError("Invalid checkpoint format - missing dataset_name in metadata")
+        
+    # Create and load model
+    model = get_model(metadata['dataset_name'])
+    if device is not None:
+        model = model.to(device)
+    
     model.load_state_dict(checkpoint['model_state_dict'])
-    return model, checkpoint.get('metadata', {})
+    return model, metadata
 
 def plot_classifier_comparison(results, output_path):
     """Plot classifier performance across datasets."""
