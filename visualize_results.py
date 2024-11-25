@@ -77,7 +77,8 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         ax.set_title(f'{dataset_name} Dataset Performance', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type and Status', fontsize=12)
         ax.set_ylabel('Accuracy (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=45, ha='right')
+        ax.tick_params(axis='x', rotation=45)
+        plt.setp(ax.get_xticklabels(), ha='right')
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
@@ -117,7 +118,8 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
         ax.set_title(f'{metric} by Attack Type and Dataset', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type and Ratio', fontsize=12)
         ax.set_ylabel('Percentage', fontsize=12)
-        ax.tick_params(axis='x', rotation=45, ha='right')
+        ax.tick_params(axis='x', rotation=45)
+        plt.setp(ax.get_xticklabels(), ha='right')
         ax.legend(title='Dataset', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
@@ -169,7 +171,8 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         ax.set_title(f'{dataset_name} Classifier Robustness', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type and Ratio', fontsize=12)
         ax.set_ylabel('Robustness Score (%)', fontsize=12)
-        ax.tick_params(axis='x', rotation=45, ha='right')
+        ax.tick_params(axis='x', rotation=45)
+        plt.setp(ax.get_xticklabels(), ha='right')
         ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
