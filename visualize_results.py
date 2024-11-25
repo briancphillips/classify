@@ -37,7 +37,7 @@ def simplify_label(label: str) -> str:
     # Map to simpler names
     mapping = {
         'pgd': 'PGD',
-        'ga': 'Genetic',
+        'ga': 'Gradient Ascent',
         'label': 'LabelFlip'  # For label_flip attacks
     }
     return mapping.get(attack_type, attack_type)
