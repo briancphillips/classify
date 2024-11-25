@@ -166,14 +166,13 @@ class PGDPoisonAttack(PoisonAttack):
             1, 3, 1, 1
         )
 
-        # Calculate valid value ranges
+        # Calculate valid value ranges for normalized space
         min_val = (-mean / std).min().item()
         max_val = ((1 - mean) / std).max().item()
-        logger.debug(f"Valid normalized range: [{min_val:.2f}, {max_val:.2f}]")
 
-        # Scale epsilon and alpha by std
-        epsilon_scaled = epsilon * std
-        alpha_scaled = alpha * std
+        # Convert epsilon and alpha to normalized space
+        epsilon_norm = epsilon / std.mean().item()
+        alpha_norm = alpha / std.mean().item()
 
         # Initialize perturbation
         delta = torch.zeros_like(image, requires_grad=True)
@@ -181,52 +180,36 @@ class PGDPoisonAttack(PoisonAttack):
         for step in range(num_steps):
             self.model.zero_grad()
 
-            # Add perturbation to normalized image
+            # Add perturbation to image
             perturbed_image = image + delta
 
-            # Debug logging for first step
-            if step == 0:
-                logger.debug(
-                    f"Initial perturbed image range: [{perturbed_image.min():.2f}, {perturbed_image.max():.2f}]"
-                )
-
+            # Forward pass
             output = self.model(perturbed_image)
             loss = F.cross_entropy(output, target)
             loss.backward()
 
             # Update perturbation with gradient ascent
             with torch.no_grad():
-                grad_sign = delta.grad.detach().sign()
-                delta.data = delta.data + alpha_scaled * grad_sign
-                # Project perturbation back to epsilon ball (scaled)
-                delta.data = torch.clamp(delta.data, -epsilon_scaled, epsilon_scaled)
-                # Ensure perturbed image stays in valid normalized range
+                # Update delta
+                delta.data = delta.data + alpha_norm * delta.grad.sign()
+
+                # Project to epsilon ball
+                delta.data = torch.clamp(delta.data, -epsilon_norm, epsilon_norm)
+
+                # Ensure perturbed image is valid
                 delta.data = torch.clamp(image + delta.data, min_val, max_val) - image
 
+            # Reset gradients
             delta.grad.zero_()
-
-            # Debug logging for last step
-            if step == num_steps - 1:
-                logger.debug(
-                    f"Final delta range: [{delta.min():.2f}, {delta.max():.2f}]"
-                )
 
             if step % 10 == 0:
                 clear_memory(self.device)
 
-        # Final clamp to ensure valid normalized image
+        # Get final perturbed image
         final_image = torch.clamp(image + delta.detach(), min_val, max_val)
 
-        # Debug logging for final image
-        logger.debug(
-            f"Final image range: [{final_image.min():.2f}, {final_image.max():.2f}]"
-        )
-
         # Validate final image
-        if not self.validate_image(
-            final_image.unsqueeze(0) if final_image.dim() == 3 else final_image,
-            normalized=True,
-        ):
+        if not self.validate_image(final_image, normalized=True):
             return None
 
         return final_image
