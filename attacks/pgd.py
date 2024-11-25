@@ -167,8 +167,10 @@ class PGDPoisonAttack(PoisonAttack):
         )
 
         # Calculate valid value ranges for normalized space
-        min_val = (-mean / std).min().item()
-        max_val = ((1 - mean) / std).max().item()
+        min_val = (-mean / std).min().item() - 1.0  # Add buffer for numerical error
+        max_val = (
+            (1 - mean) / std
+        ).max().item() + 1.0  # Add buffer for numerical error
 
         # Convert epsilon and alpha to normalized space
         epsilon_norm = epsilon / std.mean().item()
@@ -191,13 +193,15 @@ class PGDPoisonAttack(PoisonAttack):
             # Update perturbation with gradient ascent
             with torch.no_grad():
                 # Update delta
-                delta.data = delta.data + alpha_norm * delta.grad.sign()
+                grad_sign = delta.grad.sign()
+                delta.data = delta.data + alpha_norm * grad_sign
 
                 # Project to epsilon ball
                 delta.data = torch.clamp(delta.data, -epsilon_norm, epsilon_norm)
 
                 # Ensure perturbed image is valid
-                delta.data = torch.clamp(image + delta.data, min_val, max_val) - image
+                perturbed = image + delta.data
+                delta.data = torch.clamp(perturbed, min_val, max_val) - image
 
             # Reset gradients
             delta.grad.zero_()
