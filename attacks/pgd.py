@@ -66,7 +66,7 @@ class PGDPoisonAttack(PoisonAttack):
                 epsilon=self.config.pgd_eps,
                 alpha=self.config.pgd_alpha,
                 num_steps=self.config.pgd_steps,
-                num_classes=1000,  # This will be validated inside pgd_attack
+                num_classes=100,  # CIFAR100 has 100 classes
             )
 
             if perturbed_img is None:
@@ -98,6 +98,12 @@ class PGDPoisonAttack(PoisonAttack):
                     poisoned_dataset._samples[idx] = (img_path, target)
                 else:
                     logger.warning(f"Unexpected GTSRB dataset structure at index {idx}")
+            elif isinstance(poisoned_dataset, datasets.CIFAR100):
+                # For CIFAR100 dataset
+                poisoned_dataset.data[idx] = (
+                    (perturbed_img.permute(1, 2, 0) * 255).numpy().astype(np.uint8)
+                )
+                poisoned_dataset.targets[idx] = label
             else:
                 logger.warning(f"Unsupported dataset type: {type(poisoned_dataset)}")
                 continue
