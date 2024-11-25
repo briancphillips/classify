@@ -32,12 +32,31 @@ from models import get_model, save_model, load_model
 # Get a new model instance
 model = get_model('cifar100')  # or 'gtsrb' or 'imagenette'
 
-# Save a trained model
-save_model(model, 'checkpoints/cifar100/my_model.pt')
+# Save a trained model with metadata
+save_model(
+    model, 
+    'checkpoints/cifar100/my_model.pt',
+    metadata={'custom_info': 'value'},
+    optimizer=optimizer,      # Optional: save optimizer state
+    epoch=current_epoch,     # Optional: save epoch number
+    loss=current_loss        # Optional: save loss value
+)
 
-# Load a saved model
-model, metadata = load_model('checkpoints/cifar100/my_model.pt')
+# Load a saved model (optionally specify device)
+model, metadata = load_model('checkpoints/cifar100/my_model.pt', device='cuda')
 ```
+
+### Checkpoint Management
+The framework provides robust checkpoint handling with three types of checkpoints:
+- Latest checkpoint: `{name}_latest.pt`
+- Best checkpoint: `{name}_best.pt` (lowest validation loss)
+- Emergency checkpoint: `{name}_emergency.pt` (saved during OOM or errors)
+
+Each checkpoint contains:
+- Model state dict
+- Metadata (including dataset name)
+- Optional optimizer state
+- Optional epoch number and loss value
 
 ### Data Transforms
 ```python
