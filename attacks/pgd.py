@@ -113,8 +113,22 @@ class PGDPoisonAttack(PoisonAttack):
         result.poisoned_indices = poison_indices
 
         # Create data loaders for evaluation
-        clean_loader = DataLoader(dataset, batch_size=128, shuffle=False)
-        poisoned_loader = DataLoader(poisoned_dataset, batch_size=128, shuffle=False)
+        clean_loader = DataLoader(
+            dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,  # Use single process
+            pin_memory=True,
+            persistent_workers=False,
+        )
+        poisoned_loader = DataLoader(
+            poisoned_dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,  # Use single process
+            pin_memory=True,
+            persistent_workers=False,
+        )
 
         # Evaluate model on clean and poisoned data
         result.original_accuracy = self._evaluate_model(clean_loader)

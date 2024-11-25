@@ -73,6 +73,8 @@ def get_dataset_loaders(
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=False,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
     test_loader = DataLoader(
         test_dataset,
@@ -80,6 +82,8 @@ def get_dataset_loaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=False,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
 
     logger.info(f"\nDataset: {dataset_name.upper()}")
