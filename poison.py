@@ -353,12 +353,97 @@ class PGDPoisonAttack(PoisonAttack):
         """Poison a dataset using PGD attack."""
         logger.info(f"Starting PGD poisoning with epsilon={self.config.pgd_eps}")
 
-        # Move model to device
+        # Move model to device and set to eval mode
         model = model.to(self.device)
         model.eval()
 
-        # Rest of the implementation...
-        # ... existing code ...
+        # Calculate number of samples to poison
+        num_samples = len(dataset)
+        num_poison = int(num_samples * self.config.poison_ratio)
+        logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
+
+        # Create a new dataset with the same transforms
+        poisoned_dataset = copy.deepcopy(dataset)
+
+        # Randomly select indices to poison
+        all_indices = list(range(num_samples))
+        random.shuffle(all_indices)
+        poison_indices = all_indices[:num_poison]
+
+        # Apply PGD attack to selected samples
+        for idx in tqdm(poison_indices, desc="Applying PGD attack"):
+            # Get the image and label
+            img, label = dataset[idx]
+
+            # Convert to tensor if needed
+            if not isinstance(img, torch.Tensor):
+                img = transforms.ToTensor()(img)
+
+            # Add batch dimension and move to device
+            img = img.unsqueeze(0).to(self.device)
+
+            # Perform PGD attack
+            perturbed_img = self._pgd_attack(img, model)
+
+            # Remove batch dimension and move back to CPU
+            perturbed_img = perturbed_img.squeeze(0).cpu()
+
+            # Update the dataset
+            if isinstance(poisoned_dataset, datasets.ImageFolder):
+                # For ImageFolder datasets
+                img_path = poisoned_dataset.imgs[idx][0]
+                poisoned_dataset.imgs[idx] = (img_path, label)
+                poisoned_dataset.samples[idx] = (img_path, label)
+                if hasattr(poisoned_dataset, "cache"):
+                    poisoned_dataset.cache[img_path] = transforms.ToPILImage()(
+                        perturbed_img
+                    )
+            else:
+                # For other dataset types (e.g., GTSRB)
+                poisoned_dataset.data[idx] = perturbed_img
+                if hasattr(poisoned_dataset, "targets"):
+                    poisoned_dataset.targets[idx] = label
+
+        # Create result object
+        result = PoisonResult(self.config)
+        result.poisoned_indices = poison_indices
+        result.poison_success_rate = 1.0  # Will be updated after evaluation
+
+        return poisoned_dataset, result
+
+    def _pgd_attack(self, image: torch.Tensor, model: nn.Module) -> torch.Tensor:
+        """Perform PGD attack on a single image."""
+        # Initialize perturbation
+        delta = torch.zeros_like(image, requires_grad=True)
+
+        for step in range(self.config.pgd_steps):
+            # Forward pass
+            perturbed_image = image + delta
+            perturbed_image = torch.clamp(perturbed_image, 0, 1)
+
+            output = model(perturbed_image)
+            loss = F.cross_entropy(
+                output, torch.argmax(output, dim=1)
+            )  # Maximize misclassification
+
+            # Backward pass
+            loss.backward()
+
+            # Update perturbation
+            grad_sign = delta.grad.detach().sign()
+            delta.data = delta.data + self.config.pgd_alpha * grad_sign
+            delta.data = torch.clamp(
+                delta.data, -self.config.pgd_eps, self.config.pgd_eps
+            )
+            delta.data = torch.clamp(image + delta.data, 0, 1) - image
+
+            delta.grad.zero_()
+
+            if step % 10 == 0:
+                clear_memory(self.device)
+
+        # Return perturbed image
+        return torch.clamp(image + delta.detach(), 0, 1)
 
 
 class GeneticAttack(PoisonAttack):
