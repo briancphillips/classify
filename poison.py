@@ -680,6 +680,51 @@ class PoisonExperiment:
         
         return results
 
+    def plot_combined_classifier_comparison(self, results: List[PoisonResult], output_dir: str):
+        """Plot combined classifier performance comparison across all datasets."""
+        # Prepare data for plotting
+        data = []
+        for result in results:
+            attack_type = result.config.poison_type.value
+            poison_ratio = result.config.poison_ratio
+            
+            # Add clean dataset results
+            for clf_name, acc in result.classifier_results_clean.items():
+                data.append({
+                    'Classifier': clf_name.upper(),
+                    'Accuracy': acc,
+                    'Dataset': f"{attack_type}_{poison_ratio}_clean"
+                })
+            
+            # Add poisoned dataset results
+            for clf_name, acc in result.classifier_results_poisoned.items():
+                data.append({
+                    'Classifier': clf_name.upper(),
+                    'Accuracy': acc,
+                    'Dataset': f"{attack_type}_{poison_ratio}_poisoned"
+                })
+        
+        # Convert to DataFrame for easier plotting
+        df = pd.DataFrame(data)
+        
+        # Create the plot
+        plt.figure(figsize=(15, 8))
+        sns.barplot(data=df, x='Dataset', y='Accuracy', hue='Classifier')
+        
+        # Customize the plot
+        plt.title('Classifier Performance Across All Datasets', fontsize=14, pad=20)
+        plt.xlabel('Dataset (Attack_Type_Ratio_Status)', fontsize=12)
+        plt.ylabel('Accuracy (%)', fontsize=12)
+        plt.xticks(rotation=45, ha='right')
+        plt.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        
+        # Save the plot
+        plot_path = os.path.join(output_dir, 'combined_classifier_comparison.png')
+        plt.savefig(plot_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        logger.info(f"Saved combined classifier comparison plot to {plot_path}")
+
     def plot_classifier_comparison(self, results: List[PoisonResult], output_dir: str):
         """Plot classifier performance comparison."""
         # Prepare data for plotting
@@ -723,6 +768,9 @@ class PoisonExperiment:
         plt.savefig(plot_path)
         plt.close()
         logger.info(f"Classifier comparison plot saved to {plot_path}")
+        
+        # Add the combined plot
+        self.plot_combined_classifier_comparison(results, output_dir)
     
     def run_experiments(self) -> List[PoisonResult]:
         """Run all poisoning experiments."""
