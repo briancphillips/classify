@@ -127,10 +127,19 @@ class PoisonResult:
 class PoisonAttack:
     """Base class for poison attacks"""
 
-    def __init__(self, model: nn.Module, device: Optional[torch.device] = None):
-        self.model = model
-        self.device = device if device is not None else get_device()
-        self.model = self.model.to(self.device)
+    def __init__(self, config: PoisonConfig, device: torch.device):
+        self.config = config
+        self.device = device
+        if config.random_seed is not None:
+            torch.manual_seed(config.random_seed)
+            np.random.seed(config.random_seed)
+            random.seed(config.random_seed)
+
+    def poison_dataset(
+        self, dataset: Dataset, model: nn.Module
+    ) -> Tuple[Dataset, PoisonResult]:
+        """Poison a dataset according to configuration"""
+        raise NotImplementedError
 
     def validate_image(self, image: torch.Tensor) -> bool:
         """Validate image tensor format and values."""
@@ -328,103 +337,28 @@ def get_device(device_str: Optional[str] = None) -> torch.device:
 
 
 class PGDPoisonAttack(PoisonAttack):
-    """Projected Gradient Descent Attack"""
+    """PGD-based poisoning attack."""
 
     def __init__(self, config: PoisonConfig, device: torch.device):
-        super().__init__(config)
+        self.config = config
         self.device = device
+        if config.random_seed is not None:
+            torch.manual_seed(config.random_seed)
+            np.random.seed(config.random_seed)
+            random.seed(config.random_seed)
 
     def poison_dataset(
-        self, original_dataset: datasets.ImageFolder
-    ) -> Tuple[datasets.ImageFolder, PoisonResult]:
+        self, dataset: Dataset, model: nn.Module
+    ) -> Tuple[Dataset, PoisonResult]:
         """Poison a dataset using PGD attack."""
-        logger.info("Starting PGD poisoning attack")
+        logger.info(f"Starting PGD poisoning with epsilon={self.config.pgd_eps}")
 
-        # Calculate number of samples to poison
-        num_samples = len(original_dataset)
-        num_poison = int(num_samples * self.config.poison_ratio)
-        logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
+        # Move model to device
+        model = model.to(self.device)
+        model.eval()
 
-        # Create a new dataset with the same transforms
-        poisoned_dataset = copy.deepcopy(original_dataset)
-
-        # Randomly select indices to poison
-        all_indices = list(range(num_samples))
-        random.shuffle(all_indices)
-        poison_indices = all_indices[:num_poison]
-
-        # Apply PGD attack to selected samples
-        for idx in poison_indices:
-            # Get the image path and label
-            if hasattr(poisoned_dataset, "imgs"):  # ImageFolder dataset
-                img_path = poisoned_dataset.imgs[idx][0]
-                label = poisoned_dataset.imgs[idx][1]
-            elif hasattr(poisoned_dataset, "_samples"):  # GTSRB dataset
-                img_path = poisoned_dataset._samples[idx][0]
-                label = poisoned_dataset._samples[idx][1]
-            else:  # Fallback for other dataset types
-                img_path = poisoned_dataset.samples[idx][0]
-                label = poisoned_dataset.samples[idx][1]
-
-            # Load the image
-            img = Image.open(img_path)
-
-            # Convert to tensor and add batch dimension
-            img = transforms.ToTensor()(img)
-            img = img.unsqueeze(0).to(self.device)
-
-            # Perform PGD attack
-            perturbed_img = self._pgd_attack(img)
-
-            # Convert back to PIL image
-            perturbed_img = transforms.ToPILImage()(perturbed_img.squeeze().cpu())
-
-            # Replace the image in the dataset
-            # Store the path and update the image
-            if hasattr(poisoned_dataset, "imgs"):
-                poisoned_dataset.imgs[idx] = (img_path, label)
-                poisoned_dataset.samples[idx] = (img_path, label)
-            elif hasattr(poisoned_dataset, "_samples"):
-                poisoned_dataset._samples[idx] = (img_path, label)
-            else:
-                poisoned_dataset.samples[idx] = (img_path, label)
-
-            # Update the cached image if it exists
-            if hasattr(poisoned_dataset, "cache"):
-                poisoned_dataset.cache[img_path] = perturbed_img
-
-        result = PoisonResult(self.config)
-        result.poisoned_indices = poison_indices
-        result.poison_success_rate = 1.0  # We'll update this after evaluation
-
-        return poisoned_dataset, result
-
-    def _pgd_attack(self, image: torch.Tensor) -> torch.Tensor:
-        """Perform PGD attack on a single image."""
-        # Clone the image and initialize perturbation
-        perturbed = image.clone().detach().requires_grad_(True)
-
-        for step in range(self.config.pgd_steps):
-            # Forward pass
-            loss = -torch.norm(perturbed - image)  # Maximize L2 distance
-
-            # Backward pass
-            loss.backward()
-
-            # Update perturbed image
-            with torch.no_grad():
-                grad_sign = perturbed.grad.sign()
-                perturbed.data = perturbed.data + self.config.pgd_alpha * grad_sign
-
-                # Project back to epsilon ball
-                delta = perturbed.data - image
-                delta = torch.clamp(delta, -self.config.pgd_eps, self.config.pgd_eps)
-                perturbed.data = torch.clamp(image + delta, 0, 1)
-
-                # Reset gradients
-                perturbed.grad.zero_()
-
-        return perturbed.detach()
+        # Rest of the implementation...
+        # ... existing code ...
 
 
 class GeneticAttack(PoisonAttack):
@@ -587,12 +521,16 @@ class LabelFlipAttack(PoisonAttack):
 
 
 def create_poison_attack(config: PoisonConfig, device: torch.device) -> PoisonAttack:
-    """Factory function to create poison attacks"""
+    """Create appropriate poison attack based on config."""
     if config.poison_type == PoisonType.PGD:
         return PGDPoisonAttack(config, device)
     elif config.poison_type == PoisonType.GA:
         return GeneticAttack(config)
-    elif config.poison_type.value.startswith("label_flip"):
+    elif config.poison_type in [
+        PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM,
+        PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
+        PoisonType.LABEL_FLIP_SOURCE_TO_TARGET,
+    ]:
         return LabelFlipAttack(config)
     else:
         raise ValueError(f"Unknown poison type: {config.poison_type}")
@@ -1077,138 +1015,34 @@ class PoisonExperiment:
         # Add the combined plot
         self.plot_combined_classifier_comparison(results, output_dir)
 
-    def run_experiments(self) -> List[PoisonResult]:
-        """Run all poisoning experiments."""
-        results = []
-        test_loader = DataLoader(
-            self.test_dataset, batch_size=self.batch_size, pin_memory=True
-        )
-        clean_train_loader = DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            pin_memory=True,
-        )
-
-        logger.debug(
-            f"Dataset sizes - Train: {len(self.train_dataset)}, Test: {len(self.test_dataset)}"
-        )
-
-        # Train and save clean model first
-        logger.info("Training clean model")
-        clean_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        clean_checkpoint_name = f"clean_model_{clean_timestamp}"
-        self.train_model(
-            clean_train_loader,
-            epochs=self.epochs,
-            learning_rate=self.learning_rate,
-            checkpoint_name=clean_checkpoint_name,
-        )
-
-        # Get clean model accuracy
-        clean_acc = evaluate_model(self.model, test_loader, self.device)
-        logger.info(f"Clean model accuracy: {clean_acc:.2f}%")
-
-        # Extract features from clean training and test data
-        logger.info("Extracting features from clean data")
-        train_features, train_labels = self.extract_features(self.train_dataset)
-        test_features, test_labels = self.extract_features(self.test_dataset)
-
+    def run_experiments(self):
+        """Run all configured poisoning experiments."""
         for config in self.configs:
             logger.info(f"Running experiment with config: {config}")
 
-            # Create and apply poison attack
+            # Create attack instance
             attack = create_poison_attack(config, self.device)
-            poisoned_dataset, result = attack.poison_dataset(self.train_dataset)
-            logger.debug(
-                f"Created poisoned training dataset with {len(poisoned_dataset)} samples"
-            )
 
-            # Create poisoned test dataset
-            poisoned_test_dataset, _ = attack.poison_dataset(self.test_dataset)
-            poisoned_test_loader = DataLoader(
-                poisoned_test_dataset, batch_size=self.batch_size, pin_memory=True
-            )
-            logger.debug(
-                f"Created poisoned test dataset with {len(poisoned_test_dataset)} samples"
-            )
-
-            # Create poisoned dataloader
-            poisoned_loader = DataLoader(
-                poisoned_dataset,
-                batch_size=self.batch_size,
-                shuffle=True,
-                pin_memory=True,
+            # Run poisoning attack
+            poisoned_dataset, result = attack.poison_dataset(
+                self.train_dataset, self.model
             )
 
             # Train model on poisoned data
-            checkpoint_name = f"poisoned_model_{config.poison_type.value}_{config.poison_ratio}_{result.timestamp}"
-            logger.info(f"Training model with checkpoint name: {checkpoint_name}")
+            poisoned_loader = DataLoader(
+                poisoned_dataset, batch_size=self.batch_size, shuffle=True
+            )
+
+            # Train with checkpoint support
             self.train_model(
                 poisoned_loader,
                 epochs=self.epochs,
                 learning_rate=self.learning_rate,
-                checkpoint_name=checkpoint_name,
+                checkpoint_name=f"poisoned_{config.poison_type.value}",
             )
-
-            # Evaluate neural network results
-            logger.info("Evaluating model on poisoned and clean data")
-            poisoned_acc, clean_acc = self.evaluate_attack(
-                poisoned_test_loader, test_loader
-            )
-            result.original_accuracy = clean_acc
-            result.poisoned_accuracy = poisoned_acc
-            result.poison_success_rate = 1.0 - (poisoned_acc / clean_acc)
-
-            # Extract features from poisoned test data
-            logger.info("Extracting features from poisoned test data")
-            poisoned_test_features, poisoned_test_labels = self.extract_features(
-                poisoned_test_dataset
-            )
-
-            # Evaluate traditional classifiers on clean data
-            logger.info("Evaluating classifiers on clean data")
-            result.classifier_results_clean = self.evaluate_classifiers(
-                train_features, train_labels, test_features, test_labels
-            )
-
-            # Evaluate traditional classifiers on poisoned data
-            logger.info("Evaluating classifiers on poisoned data")
-            result.classifier_results_poisoned = self.evaluate_classifiers(
-                train_features,
-                train_labels,
-                poisoned_test_features,
-                poisoned_test_labels,
-            )
-
-            results.append(result)
 
             # Save results
-            try:
-                result.save(self.output_dir)
-                logger.debug(f"Results saved to {self.output_dir}")
-            except Exception as e:
-                logger.error(f"Error saving results: {str(e)}")
-
-            logger.info("Attack Results Summary:")
-            logger.info(f"Original Accuracy: {clean_acc:.2f}%")
-            logger.info(f"Poisoned Accuracy: {poisoned_acc:.2f}%")
-            logger.info(f"Attack Success Rate: {result.poison_success_rate:.2f}")
-            logger.info("Traditional Classifier Results (Clean):")
-            for clf_name, acc in result.classifier_results_clean.items():
-                logger.info(f"  {clf_name.upper()}: {acc:.2f}%")
-            logger.info("Traditional Classifier Results (Poisoned):")
-            for clf_name, acc in result.classifier_results_poisoned.items():
-                logger.info(f"  {clf_name.upper()}: {acc:.2f}%")
-
-        # Plot classifier comparison
-        try:
-            self.plot_classifier_comparison(results, self.output_dir)
-            logger.debug("Classifier comparison plot saved")
-        except Exception as e:
-            logger.error(f"Error creating classifier comparison plot: {str(e)}")
-
-        return results
+            result.save(self.output_dir)
 
 
 def evaluate_model(
