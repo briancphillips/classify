@@ -185,7 +185,10 @@ class PGDPoisonAttack(PoisonAttack):
             if hasattr(poisoned_dataset, 'imgs'):  # ImageFolder dataset
                 img_path = poisoned_dataset.imgs[idx][0]
                 label = poisoned_dataset.imgs[idx][1]
-            else:  # GTSRB or similar dataset
+            elif hasattr(poisoned_dataset, '_samples'):  # GTSRB dataset
+                img_path = poisoned_dataset._samples[idx][0]
+                label = poisoned_dataset._samples[idx][1]
+            else:  # Fallback for other dataset types
                 img_path = poisoned_dataset.samples[idx][0]
                 label = poisoned_dataset.samples[idx][1]
             
@@ -207,6 +210,8 @@ class PGDPoisonAttack(PoisonAttack):
             if hasattr(poisoned_dataset, 'imgs'):
                 poisoned_dataset.imgs[idx] = (img_path, label)
                 poisoned_dataset.samples[idx] = (img_path, label)
+            elif hasattr(poisoned_dataset, '_samples'):
+                poisoned_dataset._samples[idx] = (img_path, label)
             else:
                 poisoned_dataset.samples[idx] = (img_path, label)
             
