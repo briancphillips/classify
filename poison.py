@@ -9,6 +9,7 @@ import random
 import copy
 from tqdm import tqdm
 import os
+import json
 import logging
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
@@ -79,43 +80,40 @@ class PoisonConfig:
     random_seed: Optional[int] = 42  # Random seed for reproducibility
 
 
+@dataclass
 class PoisonResult:
-    """Stores results of poisoning attack"""
+    """Results from a poisoning experiment."""
 
-    def __init__(self, config: PoisonConfig):
-        self.config = config
-        self.original_accuracy: float = 0.0
-        self.poisoned_accuracy: float = 0.0
-        self.poison_success_rate: float = 0.0
-        self.poisoned_indices: List[int] = []
+    config: "PoisonConfig"
+    poisoned_indices: List[int] = None
+    poison_success_rate: float = 0.0
+    original_accuracy: float = 0.0
+    poisoned_accuracy: float = 0.0
+    timestamp: str = None
+
+    def __post_init__(self):
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.classifier_results_clean: Dict[str, float] = {}
-        self.classifier_results_poisoned: Dict[str, float] = {}
 
     def to_dict(self) -> Dict:
-        """Convert results to dictionary for logging"""
-        # Convert config to dict and handle PoisonType enum
-        config_dict = {}
-        for key, value in self.config.__dict__.items():
-            if isinstance(value, PoisonType):
-                config_dict[key] = value.value
-            else:
-                config_dict[key] = value
-
+        """Convert result to dictionary for serialization."""
         return {
-            "poison_type": self.config.poison_type.value,
-            "poison_ratio": self.config.poison_ratio,
+            "config": {
+                "poison_type": self.config.poison_type.value,
+                "poison_ratio": self.config.poison_ratio,
+                "pgd_eps": self.config.pgd_eps,
+                "pgd_alpha": self.config.pgd_alpha,
+                "pgd_steps": self.config.pgd_steps,
+                "random_seed": self.config.random_seed,
+            },
+            "poisoned_indices": self.poisoned_indices,
+            "poison_success_rate": self.poison_success_rate,
             "original_accuracy": self.original_accuracy,
             "poisoned_accuracy": self.poisoned_accuracy,
-            "poison_success_rate": self.poison_success_rate,
             "timestamp": self.timestamp,
-            "config": config_dict,
-            "classifier_results_clean": self.classifier_results_clean,
-            "classifier_results_poisoned": self.classifier_results_poisoned,
         }
 
     def save(self, output_dir: str):
-        """Save results to JSON file"""
+        """Save results to JSON file."""
         os.makedirs(output_dir, exist_ok=True)
         filename = f"poison_results_{self.timestamp}.json"
         filepath = os.path.join(output_dir, filename)
