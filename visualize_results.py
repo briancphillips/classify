@@ -120,7 +120,7 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
     df['Simple_Type'] = pd.Categorical(df['Simple_Type'], 
                                      categories=['Clean'] + sorted(list(set(df['Simple_Type']) - {'Clean'})), 
                                      ordered=True)
-    df = df.sort_values('Simple_Type')
+    df = df.sort_values(['Simple_Type', 'Classifier'])
     
     # Create the plot with subplots for each dataset
     num_datasets = len(all_results)
@@ -136,15 +136,19 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Get unique values for plotting
-        attack_types = dataset_df['Display_Label'].unique()
-        classifiers = dataset_df['Classifier'].unique()
+        attack_types = sorted(dataset_df['Display_Label'].unique())
+        classifiers = sorted(dataset_df['Classifier'].unique())
         x = np.arange(len(attack_types))
         
         # Plot bars for each classifier
         for i, classifier in enumerate(classifiers):
             classifier_data = dataset_df[dataset_df['Classifier'] == classifier]
+            # Ensure data is in the same order as attack_types
+            accuracies = [classifier_data[classifier_data['Display_Label'] == attack]['Accuracy'].iloc[0] 
+                         for attack in attack_types]
+            
             offset = (i - len(classifiers)/2 + 0.5) * bar_width
-            bars = ax.bar(x + offset, classifier_data['Accuracy'], 
+            bars = ax.bar(x + offset, accuracies, 
                          bar_width, label=classifier, alpha=0.8,
                          color=colors[i % len(colors)])
             
@@ -210,7 +214,7 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     df['Simple_Attack'] = pd.Categorical(df['Simple_Attack'], 
                                        categories=['Clean'] + sorted(list(set(df['Simple_Attack']) - {'Clean'})), 
                                        ordered=True)
-    df = df.sort_values('Simple_Attack')
+    df = df.sort_values(['Simple_Attack', 'Dataset'])
     
     # Create subplots for each metric
     fig, axes = plt.subplots(3, 1, figsize=(15, 18))
@@ -221,15 +225,19 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     
     for ax, metric, color in zip(axes, metrics, colors):
         # Get unique values for plotting
-        attack_types = df['Display_Label'].unique()
-        datasets = df['Dataset'].unique()
+        attack_types = sorted(df['Display_Label'].unique())
+        datasets = sorted(df['Dataset'].unique())
         x = np.arange(len(attack_types))
         
         # Plot bars for each dataset
         for i, dataset in enumerate(datasets):
             dataset_data = df[df['Dataset'] == dataset]
+            # Ensure data is in the same order as attack_types
+            values = [dataset_data[dataset_data['Display_Label'] == attack][metric].iloc[0] 
+                     for attack in attack_types]
+            
             offset = (i - len(datasets)/2 + 0.5) * bar_width
-            bars = ax.bar(x + offset, dataset_data[metric], 
+            bars = ax.bar(x + offset, values, 
                          bar_width, label=dataset, alpha=0.8,
                          color=color)
             
@@ -299,7 +307,7 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
     df['Simple_Attack'] = pd.Categorical(df['Simple_Attack'], 
                                        categories=['Clean'] + sorted(list(set(df['Simple_Attack']) - {'Clean'})), 
                                        ordered=True)
-    df = df.sort_values('Simple_Attack')
+    df = df.sort_values(['Simple_Attack', 'Classifier'])
     
     # Create subplot for each dataset
     num_datasets = len(all_results)
@@ -315,15 +323,19 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
         dataset_df = df[df['Dataset'] == dataset_name]
         
         # Get unique values for plotting
-        attack_types = dataset_df['Display_Label'].unique()
-        classifiers = dataset_df['Classifier'].unique()
+        attack_types = sorted(dataset_df['Display_Label'].unique())
+        classifiers = sorted(dataset_df['Classifier'].unique())
         x = np.arange(len(attack_types))
         
         # Plot bars for each classifier
         for i, classifier in enumerate(classifiers):
             classifier_data = dataset_df[dataset_df['Classifier'] == classifier]
+            # Ensure data is in the same order as attack_types
+            robustness = [classifier_data[classifier_data['Display_Label'] == attack]['Robustness'].iloc[0] 
+                         for attack in attack_types]
+            
             offset = (i - len(classifiers)/2 + 0.5) * bar_width
-            bars = ax.bar(x + offset, classifier_data['Robustness'], 
+            bars = ax.bar(x + offset, robustness, 
                          bar_width, label=classifier, alpha=0.8,
                          color=colors[i % len(colors)])
             
