@@ -5,6 +5,7 @@ This framework implements various data poisoning attacks on image classification
 ## Model Architectures
 
 ### CIFAR100
+
 - WideResNet-50-2 backbone
 - Modified for 32x32 input size
 - 100 output classes
@@ -12,12 +13,14 @@ This framework implements various data poisoning attacks on image classification
 - Improved training strategy with mixup
 
 ### GTSRB (German Traffic Sign Recognition Benchmark)
+
 - Custom CNN architecture with 4 blocks
 - 43 output classes
 - Specialized for traffic sign recognition
 - Custom initialization
 
 ### Imagenette
+
 - Pretrained ResNet50 backbone
 - Transfer learning (frozen early layers)
 - Custom classifier head
@@ -26,6 +29,7 @@ This framework implements various data poisoning attacks on image classification
 ## Model Functions
 
 ### Loading Models
+
 ```python
 from models import get_model, save_model, load_model
 
@@ -34,7 +38,7 @@ model = get_model('cifar100')  # or 'gtsrb' or 'imagenette'
 
 # Save a trained model with metadata
 save_model(
-    model, 
+    model,
     'checkpoints/cifar100/my_model.pt',
     metadata={'custom_info': 'value'},
     optimizer=optimizer,      # Optional: save optimizer state
@@ -47,18 +51,22 @@ model, metadata = load_model('checkpoints/cifar100/my_model.pt', device='cuda')
 ```
 
 ### Checkpoint Management
+
 The framework provides robust checkpoint handling with three types of checkpoints:
+
 - Latest checkpoint: `{name}_latest.pt`
 - Best checkpoint: `{name}_best.pt` (lowest validation loss)
 - Emergency checkpoint: `{name}_emergency.pt` (saved during OOM or errors)
 
 Each checkpoint contains:
+
 - Model state dict
 - Metadata (including dataset name)
 - Optional optimizer state
 - Optional epoch number and loss value
 
 ### Data Transforms
+
 ```python
 from models import (
     CIFAR100_TRANSFORM_TRAIN, CIFAR100_TRANSFORM_TEST,
@@ -80,6 +88,7 @@ test_dataset = torchvision.datasets.CIFAR100(
 ### Model Architecture Details
 
 #### CIFAR100 Model
+
 - Input: 32x32x3 RGB images
 - Backbone: WideResNet-50-2 with modified first layer
 - Feature dimension: 2048
@@ -87,6 +96,7 @@ test_dataset = torchvision.datasets.CIFAR100(
 - Training: SGD with momentum, learning rate scheduling
 
 #### GTSRB Model
+
 - Input: 32x32x3 RGB images
 - Architecture:
   - 4 convolutional blocks with batch normalization
@@ -96,6 +106,7 @@ test_dataset = torchvision.datasets.CIFAR100(
 - Training: Adam optimizer, reduced learning rate on plateau
 
 #### Imagenette Model
+
 - Input: 224x224x3 RGB images
 - Backbone: Pretrained ResNet50
 - Modifications:
@@ -108,6 +119,7 @@ test_dataset = torchvision.datasets.CIFAR100(
 ## Available Attacks
 
 ### 1. Projected Gradient Descent (PGD)
+
 ```python
 config = PoisonConfig(
     poison_type=PoisonType.PGD,
@@ -119,19 +131,21 @@ config = PoisonConfig(
 )
 ```
 
-### 2. Genetic Algorithm (GA)
+### 2. Gradient Ascent (GA)
+
 ```python
 config = PoisonConfig(
     poison_type=PoisonType.GA,
     poison_ratio=0.1,           # Percentage of dataset to poison
-    ga_pop_size=50,            # Population size
-    ga_generations=100,        # Number of generations
-    ga_mutation_rate=0.1,      # Mutation probability
+    ga_pop_size=50,            # Number of gradient steps
+    ga_generations=100,        # Number of iterations
+    ga_mutation_rate=0.1,      # Learning rate
     random_seed=42             # Optional random seed
 )
 ```
 
 ### 3. Label Flipping Attacks
+
 ```python
 # Random to Random
 config = PoisonConfig(
@@ -161,12 +175,14 @@ config = PoisonConfig(
 ## Running Experiments
 
 ### Basic Usage
+
 ```bash
 # Run default experiment (CIFAR100 with PGD attack)
 python poison.py
 ```
 
 ### Command Line Usage
+
 ```bash
 # Basic usage (defaults to CIFAR100 with PGD attack)
 python poison.py
@@ -199,6 +215,7 @@ python poison.py --output-dir "my_results" --checkpoint-dir "my_checkpoints"
 ```
 
 ### Available Arguments
+
 ```
 Dataset selection:
   --dataset {cifar100,gtsrb,imagenette}
@@ -274,16 +291,19 @@ Output options:
 ### Examples
 
 1. Train CIFAR100 model:
+
 ```bash
 python models.py --dataset cifar100 --epochs 200
 ```
 
 2. Train GTSRB model with custom batch size:
+
 ```bash
 python models.py --dataset gtsrb --batch-size 64
 ```
 
 3. Train Imagenette model on CPU:
+
 ```bash
 python models.py --dataset imagenette --device cpu
 ```
@@ -291,6 +311,7 @@ python models.py --dataset imagenette --device cpu
 Each model will be saved in the checkpoints directory with training metrics and can be loaded later using the functions described in the Model Functions section.
 
 ## Custom Configuration
+
 Create a Python script with your configuration:
 
 ```python
@@ -359,7 +380,9 @@ classify/
 ```
 
 ## Results Format
+
 Results are saved as JSON files containing:
+
 - Original model accuracy
 - Poisoned model accuracy
 - Attack success rate
@@ -367,7 +390,9 @@ Results are saved as JSON files containing:
 - Timestamp
 
 ## Dependencies
+
 Required packages are listed in `requirements.txt`:
+
 ```
 torch>=2.0.0
 torchvision>=0.15.0
@@ -378,5 +403,7 @@ tqdm>=4.62.0
 ```
 
 Install dependencies:
+
 ```bash
 pip install -r requirements.txt
+```

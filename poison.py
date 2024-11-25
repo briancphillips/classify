@@ -454,28 +454,25 @@ class PGDPoisonAttack(PoisonAttack):
         return torch.clamp(image + delta.detach(), 0, 1)
 
 
-class GeneticAttack(PoisonAttack):
-    """Genetic Algorithm Attack"""
+class GradientAscentAttack(PoisonAttack):
+    """Gradient Ascent Attack"""
 
-    def _fitness_function(self, x: torch.Tensor, original: torch.Tensor) -> float:
-        """Compute fitness score for a candidate solution"""
-        # Example fitness: balance between perturbation size and visual similarity
-        perturbation_size = torch.norm(x - original)
-        visual_similarity = -torch.mean((x - original) ** 2)
-        return float(-perturbation_size + 0.5 * visual_similarity)
-
-    def _crossover(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
-        """Perform crossover between two parents"""
-        mask = torch.rand_like(x1) < 0.5
-        return torch.where(mask, x1, x2)
-
-    def _mutate(
-        self, x: torch.Tensor, mutation_rate: float, eps: float
+    def _compute_gradient(
+        self, x: torch.Tensor, original: torch.Tensor
     ) -> torch.Tensor:
-        """Apply mutation to an individual"""
-        mask = torch.rand_like(x) < mutation_rate
-        noise = torch.randn_like(x) * eps
-        return torch.clamp(x + mask.float() * noise, 0, 1)
+        """Compute gradient for optimization"""
+        x.requires_grad_(True)
+        loss = torch.mean((x - original) ** 2)  # L2 loss
+        loss.backward()
+        grad = x.grad.detach()
+        x.requires_grad_(False)
+        return grad
+
+    def _step(
+        self, x: torch.Tensor, grad: torch.Tensor, learning_rate: float
+    ) -> torch.Tensor:
+        """Take a gradient step"""
+        return torch.clamp(x - learning_rate * grad, 0, 1)
 
     def poison_dataset(self, dataset: Dataset) -> Tuple[Dataset, PoisonResult]:
         result = PoisonResult(self.config)
@@ -500,55 +497,27 @@ class GeneticAttack(PoisonAttack):
         poisoned_data = data.clone()
         poisoned_data = poisoned_data.to(device)
 
-        # GA parameters
-        pop_size = self.config.ga_pop_size
-        num_generations = self.config.ga_generations
-        mutation_rate = self.config.ga_mutation_rate
-        eps = 0.1  # Mutation strength
+        # Gradient ascent parameters
+        num_steps = self.config.ga_pop_size
+        num_iterations = self.config.ga_generations
+        learning_rate = self.config.ga_mutation_rate
+        eps = 0.1  # Maximum perturbation size
 
         for idx in indices:
             original = poisoned_data[idx : idx + 1].to(device)
+            x = original.clone()
 
-            # Initialize population
-            population = [
-                original + torch.randn_like(original) * eps for _ in range(pop_size)
-            ]
-            population = [torch.clamp(p, 0, 1) for p in population]
-
-            # Evolution loop
-            for _ in range(num_generations):
-                # Evaluate fitness
-                fitness_scores = [
-                    self._fitness_function(p, original) for p in population
-                ]
-
-                # Selection (tournament selection)
-                new_population = []
-                for _ in range(pop_size):
-                    idx1, idx2 = np.random.choice(pop_size, 2, replace=False)
-                    winner = (
-                        population[idx1]
-                        if fitness_scores[idx1] > fitness_scores[idx2]
-                        else population[idx2]
+            # Gradient ascent loop
+            for _ in range(num_iterations):
+                for _ in range(num_steps):
+                    grad = self._compute_gradient(x, original)
+                    x = self._step(x, grad, learning_rate)
+                    # Clip perturbation size
+                    x = torch.clamp(
+                        original + torch.clamp(x - original, -eps, eps), 0, 1
                     )
-                    new_population.append(winner)
 
-                # Crossover and mutation
-                offspring = []
-                for i in range(0, pop_size, 2):
-                    p1, p2 = new_population[i], new_population[min(i + 1, pop_size - 1)]
-                    c1 = self._crossover(p1, p2)
-                    c2 = self._crossover(p2, p1)
-                    c1 = self._mutate(c1, mutation_rate, eps)
-                    c2 = self._mutate(c2, mutation_rate, eps)
-                    offspring.extend([c1, c2])
-
-                population = offspring[:pop_size]
-
-            # Select best individual
-            fitness_scores = [self._fitness_function(p, original) for p in population]
-            best_idx = np.argmax(fitness_scores)
-            poisoned_data[idx] = population[best_idx]
+            poisoned_data[idx] = x
 
         # Update dataset
         if hasattr(dataset, "data"):
@@ -618,7 +587,7 @@ def create_poison_attack(config: PoisonConfig, device: torch.device) -> PoisonAt
     if config.poison_type == PoisonType.PGD:
         return PGDPoisonAttack(config, device)
     elif config.poison_type == PoisonType.GA:
-        return GeneticAttack(config)
+        return GradientAscentAttack(config)
     elif config.poison_type in [
         PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM,
         PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
