@@ -6,6 +6,7 @@ import glob
 import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from typing import List, Dict, Tuple
 
 def load_all_results(base_dir: str) -> Dict[str, List[Dict]]:
@@ -127,26 +128,37 @@ def plot_combined_classifier_comparison(all_results: Dict[str, List[Dict]], outp
     if num_datasets == 1:
         axes = [axes]
     
+    bar_width = 0.15
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
     for ax, (dataset_name, _) in zip(axes, all_results.items()):
         # Filter data for this dataset
         dataset_df = df[df['Dataset'] == dataset_name]
         
-        # Create the subplot with custom style
-        bars = plt.bar(dataset_df['Display_Label'], dataset_df['Accuracy'], ax=ax, alpha=0.8)
+        # Get unique values for plotting
+        attack_types = dataset_df['Display_Label'].unique()
+        classifiers = dataset_df['Classifier'].unique()
+        x = np.arange(len(attack_types))
         
-        # Remove the top line of bars
-        for patch in ax.patches:
-            patch.set_edgecolor('none')
-        
-        # Add value labels on top of bars
-        for container in ax.containers:
-            ax.bar_label(container, fmt='%.1f%%', padding=3)
+        # Plot bars for each classifier
+        for i, classifier in enumerate(classifiers):
+            classifier_data = dataset_df[dataset_df['Classifier'] == classifier]
+            offset = (i - len(classifiers)/2 + 0.5) * bar_width
+            bars = ax.bar(x + offset, classifier_data['Accuracy'], 
+                         bar_width, label=classifier, alpha=0.8,
+                         color=colors[i % len(colors)])
+            
+            # Add value labels on top of bars
+            ax.bar_label(bars, fmt='%.1f%%', padding=3)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Dataset Performance', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Accuracy (%)', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(attack_types)
         ax.grid(axis='y', alpha=0.3)
+        ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(dataset_df['Accuracy']) * 1.15)  # Add 15% padding for labels
@@ -205,21 +217,33 @@ def plot_attack_effectiveness(all_results: Dict[str, List[Dict]], output_dir: st
     metrics = ['Original Accuracy', 'Poisoned Accuracy', 'Success Rate']
     colors = ['#2ecc71', '#e74c3c', '#f1c40f']  # Green, Red, Yellow
     
+    bar_width = 0.35
+    
     for ax, metric, color in zip(axes, metrics, colors):
-        bars = plt.bar(df['Display_Label'], df[metric], ax=ax, alpha=0.8, color=color)
+        # Get unique values for plotting
+        attack_types = df['Display_Label'].unique()
+        datasets = df['Dataset'].unique()
+        x = np.arange(len(attack_types))
         
-        # Remove the top line of bars
-        for patch in ax.patches:
-            patch.set_edgecolor('none')
+        # Plot bars for each dataset
+        for i, dataset in enumerate(datasets):
+            dataset_data = df[df['Dataset'] == dataset]
+            offset = (i - len(datasets)/2 + 0.5) * bar_width
+            bars = ax.bar(x + offset, dataset_data[metric], 
+                         bar_width, label=dataset, alpha=0.8,
+                         color=color)
+            
+            # Add value labels on top of bars
+            ax.bar_label(bars, fmt='%.1f%%', padding=3)
         
-        # Add value labels on top of bars
-        for container in ax.containers:
-            ax.bar_label(container, fmt='%.1f%%', padding=3)
-        
+        # Customize the subplot
         ax.set_title(f'{metric} by Attack Type and Dataset', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Percentage', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(attack_types)
         ax.grid(axis='y', alpha=0.3)
+        ax.legend(title='Dataset', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(df[metric]) * 1.15)  # Add 15% padding for labels
@@ -283,26 +307,37 @@ def plot_classifier_robustness(all_results: Dict[str, List[Dict]], output_dir: s
     if num_datasets == 1:
         axes = [axes]
     
+    bar_width = 0.15
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
     for ax, (dataset_name, _) in zip(axes, all_results.items()):
         # Filter data for this dataset
         dataset_df = df[df['Dataset'] == dataset_name]
         
-        # Create the subplot with custom style
-        bars = plt.bar(dataset_df['Display_Label'], dataset_df['Robustness'], ax=ax, alpha=0.8)
+        # Get unique values for plotting
+        attack_types = dataset_df['Display_Label'].unique()
+        classifiers = dataset_df['Classifier'].unique()
+        x = np.arange(len(attack_types))
         
-        # Remove the top line of bars
-        for patch in ax.patches:
-            patch.set_edgecolor('none')
-        
-        # Add value labels on top of bars
-        for container in ax.containers:
-            ax.bar_label(container, fmt='%.1f%%', padding=3)
+        # Plot bars for each classifier
+        for i, classifier in enumerate(classifiers):
+            classifier_data = dataset_df[dataset_df['Classifier'] == classifier]
+            offset = (i - len(classifiers)/2 + 0.5) * bar_width
+            bars = ax.bar(x + offset, classifier_data['Robustness'], 
+                         bar_width, label=classifier, alpha=0.8,
+                         color=colors[i % len(colors)])
+            
+            # Add value labels on top of bars
+            ax.bar_label(bars, fmt='%.1f%%', padding=3)
         
         # Customize the subplot
         ax.set_title(f'{dataset_name} Classifier Robustness', fontsize=14, pad=20)
         ax.set_xlabel('Attack Type', fontsize=12)
         ax.set_ylabel('Robustness Score (%)', fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(attack_types)
         ax.grid(axis='y', alpha=0.3)
+        ax.legend(title='Classifier', bbox_to_anchor=(1.05, 1), loc='upper left')
         
         # Set y-axis to start from 0
         ax.set_ylim(0, max(dataset_df['Robustness']) * 1.15)  # Add 15% padding for labels
