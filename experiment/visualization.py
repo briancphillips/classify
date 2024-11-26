@@ -255,3 +255,63 @@ def plot_classifier_comparison(
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     logger.info(f"Saved classifier comparison plot to {plot_path}")
+
+
+def plot_poisoned_classifier_comparison(
+    results: Dict[str, Dict[str, Dict[str, float]]], output_dir: str
+) -> None:
+    """Plot poisoned classifier performance comparison across datasets.
+
+    Args:
+        results: Dictionary with format {dataset: {attack: {metric: value}}}
+        output_dir: Directory to save plot
+    """
+    plt.figure(figsize=(12, 6))
+
+    # Set style
+    plt.style.use("seaborn-v0_8-darkgrid")
+
+    # Prepare data
+    datasets = list(results.keys())
+    attacks = ["PGD", "GA", "Label Flip"]  # Common attack types
+    x = np.arange(len(datasets))
+    width = 0.2
+
+    # Plot bars for each attack
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]  # Set custom colors
+    for i, (attack, color) in enumerate(zip(attacks, colors)):
+        accuracies = []
+        for dataset in datasets:
+            # Get accuracy for this attack type (if available)
+            attack_key = attack.lower().replace(" ", "_")
+            if attack_key in results[dataset]:
+                accuracies.append(results[dataset][attack_key]["poisoned_accuracy"])
+            else:
+                accuracies.append(0)  # Default if attack not present
+
+        plt.bar(
+            x + i * width - width * 1.5,
+            accuracies,
+            width,
+            label=attack,
+            color=color,
+        )
+
+    # Customize plot
+    plt.title("Poisoned Model Performance Across Datasets", pad=20, fontsize=14)
+    plt.ylabel("Accuracy", fontsize=12)
+    plt.ylim(0, 1.0)
+    plt.xticks(x, [d.upper() for d in datasets], fontsize=11)
+    plt.yticks(fontsize=11)
+    plt.legend(title="Attack Types", title_fontsize=12, fontsize=11)
+    plt.grid(True, axis="y", alpha=0.3)
+
+    # Adjust layout and save
+    plt.tight_layout()
+    plot_path = os.path.join(
+        output_dir,
+        f"poisoned_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+    )
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved poisoned comparison plot to {plot_path}")
