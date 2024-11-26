@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import Tuple, List
+from torchvision import datasets, transforms
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult

@@ -53,15 +53,22 @@ def download_imagenette(data_dir: str, split: str = "train"):
         with tarfile.open(filename, "r:gz") as tar:
             tar.extractall(path=data_dir)
 
-    # Create train/val symlinks
+    # Create train/val symlinks if they don't exist
     src_dir = os.path.join(data_dir, "imagenette2-160")
     train_dir = os.path.join(data_dir, "train")
     val_dir = os.path.join(data_dir, "val")
 
-    if not os.path.exists(train_dir):
-        os.symlink(os.path.join(src_dir, "train"), train_dir)
-    if not os.path.exists(val_dir):
-        os.symlink(os.path.join(src_dir, "val"), val_dir)
+    # Remove existing symlinks if they exist
+    if os.path.islink(train_dir):
+        os.unlink(train_dir)
+    if os.path.islink(val_dir):
+        os.unlink(val_dir)
+
+    # Create new symlinks
+    os.symlink(os.path.join(src_dir, "train"), train_dir)
+    os.symlink(os.path.join(src_dir, "val"), val_dir)
+
+    logger.info("ImageNette dataset setup complete")
 
 
 def get_dataset(
