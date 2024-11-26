@@ -8,6 +8,7 @@ import requests
 import tarfile
 from tqdm import tqdm
 from utils.logging import get_logger
+import shutil
 
 logger = get_logger(__name__)
 
@@ -48,25 +49,25 @@ def download_imagenette(data_dir: str, split: str = "train"):
                 pbar.update(size)
 
     # Extract file if needed
-    if not os.path.exists(os.path.join(data_dir, "imagenette2-160")):
+    src_dir = os.path.join(data_dir, "imagenette2-160")
+    if not os.path.exists(src_dir):
         logger.info(f"Extracting {filename}")
         with tarfile.open(filename, "r:gz") as tar:
             tar.extractall(path=data_dir)
 
-    # Create train/val symlinks if they don't exist
-    src_dir = os.path.join(data_dir, "imagenette2-160")
+    # Set up train and val directories
     train_dir = os.path.join(data_dir, "train")
     val_dir = os.path.join(data_dir, "val")
 
-    # Remove existing symlinks if they exist
-    if os.path.islink(train_dir):
-        os.unlink(train_dir)
-    if os.path.islink(val_dir):
-        os.unlink(val_dir)
+    # Remove existing directories if they exist
+    if os.path.exists(train_dir):
+        shutil.rmtree(train_dir)
+    if os.path.exists(val_dir):
+        shutil.rmtree(val_dir)
 
-    # Create new symlinks
-    os.symlink(os.path.join(src_dir, "train"), train_dir)
-    os.symlink(os.path.join(src_dir, "val"), val_dir)
+    # Copy directories instead of using symlinks
+    shutil.copytree(os.path.join(src_dir, "train"), train_dir)
+    shutil.copytree(os.path.join(src_dir, "val"), val_dir)
 
     logger.info("ImageNette dataset setup complete")
 
