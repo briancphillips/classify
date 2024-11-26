@@ -207,11 +207,16 @@ class LabelFlipAttack(PoisonAttack):
         with torch.no_grad():
             for idx in indices:
                 img, _ = dataset[idx]
+                # Ensure proper tensor format and dimensions
                 if not isinstance(img, torch.Tensor):
                     img = transforms.ToTensor()(img)
-                    if len(img.shape) == 3:
-                        img = img.unsqueeze(0)
-                img = img.to(self.device)
+                # Always ensure 4D input (batch, channels, height, width)
+                if len(img.shape) == 3:
+                    img = img.unsqueeze(0)  # Add batch dimension
+                elif len(img.shape) != 4:
+                    raise ValueError(f"Unexpected image shape: {img.shape}")
+
+                img = move_to_device(img, self.device)
                 output = self.model(img)
                 pred = output.argmax(1).item()
                 if pred != all_labels[idx]:  # Different from original label
