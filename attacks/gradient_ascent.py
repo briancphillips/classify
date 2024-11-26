@@ -77,10 +77,9 @@ class GradientAscentAttack(PoisonAttack):
             base_dataset = dataset.dataset
             if isinstance(base_dataset, datasets.CIFAR100):
                 data = torch.tensor(base_dataset.data[dataset.indices]).float()
-                if len(data.shape) == 3:
-                    data = data.unsqueeze(1)
-                if data.shape[-3] == 3:
-                    data = data.permute(0, 3, 1, 2)
+                # CIFAR100 data is in (N, H, W, C) format, convert to (N, C, H, W)
+                data = data.permute(0, 3, 1, 2)
+                data = data / 255.0  # Normalize to [0, 1]
             elif isinstance(base_dataset, datasets.GTSRB):
                 all_data = []
                 for idx in dataset.indices:
@@ -110,18 +109,13 @@ class GradientAscentAttack(PoisonAttack):
             # For datasets with .data attribute (e.g., CIFAR100)
             if not isinstance(dataset.data, torch.Tensor):
                 data = torch.tensor(dataset.data).float()
-                if len(data.shape) == 3:
-                    data = data.unsqueeze(1)
-                if data.shape[-3] == 3:
-                    data = data.permute(0, 3, 1, 2)
+                # Convert from (N, H, W, C) to (N, C, H, W)
+                data = data.permute(0, 3, 1, 2)
+                data = data / 255.0  # Normalize to [0, 1]
             else:
                 data = dataset.data.clone()
         else:
             raise ValueError(f"Unsupported dataset type: {type(dataset)}")
-
-        # Normalize data to [0, 1] if needed
-        if data.max() > 1:
-            data = data / 255.0
 
         poisoned_data = data.clone()
         poisoned_data = move_to_device(poisoned_data, self.device)
@@ -170,12 +164,11 @@ class GradientAscentAttack(PoisonAttack):
             for i, idx in enumerate(indices):
                 base_idx = poisoned_dataset.indices[idx]
                 if isinstance(base_dataset, datasets.CIFAR100):
+                    # Convert from (C, H, W) to (H, W, C) for CIFAR100
+                    perturbed = poisoned_data[i].permute(1, 2, 0)
                     base_dataset.data[base_idx] = (
-                        (poisoned_data[i].permute(1, 2, 0) * 255)
-                        .cpu()
-                        .numpy()
-                        .astype(np.uint8)
-                    )
+                        perturbed.cpu().numpy() * 255
+                    ).astype(np.uint8)
                 elif isinstance(base_dataset, datasets.GTSRB):
                     if hasattr(base_dataset, "_samples"):
                         img_path, target = base_dataset._samples[base_idx]
@@ -193,13 +186,11 @@ class GradientAscentAttack(PoisonAttack):
                     perturbed_img.save(img_path)
         elif hasattr(poisoned_dataset, "data"):
             # For datasets with .data attribute
-            if isinstance(dataset.data, np.ndarray):
+            if isinstance(poisoned_dataset.data, np.ndarray):
+                # Convert from (N, C, H, W) to (N, H, W, C) for numpy arrays
+                poisoned_data = poisoned_data.permute(0, 2, 3, 1)
                 poisoned_data = (poisoned_data.cpu().numpy() * 255).astype(np.uint8)
-            poisoned_dataset.data = (
-                poisoned_data.cpu()
-                if isinstance(poisoned_data, torch.Tensor)
-                else poisoned_data
-            )
+            poisoned_dataset.data = poisoned_data
 
         # Create data loaders for evaluation
         clean_loader = DataLoader(
