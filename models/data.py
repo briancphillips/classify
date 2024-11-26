@@ -103,23 +103,27 @@ def get_dataset(
 
     # Get dataset root directory
     data_dir = os.path.join("data", dataset_name.lower())
-    os.makedirs(data_dir, exist_ok=True)
+
+    # Verify dataset directory exists
+    if not os.path.exists(data_dir):
+        raise ValueError(f"Dataset directory not found: {data_dir}")
 
     # Load appropriate dataset
     if dataset_name.lower() == "cifar100":
         dataset = datasets.CIFAR100(
-            root=data_dir, train=train, download=True, transform=transform
+            root=data_dir, train=train, download=False, transform=transform
         )
     elif dataset_name.lower() == "gtsrb":
         split = "train" if train else "test"
         dataset = datasets.GTSRB(
-            root=data_dir, split=split, download=True, transform=transform
+            root=data_dir, split=split, download=False, transform=transform
         )
     elif dataset_name.lower() == "imagenette":
-        # Set up ImageNette dataset
-        setup_imagenette(data_dir)
+        # Use existing ImageNette directory structure
         split = "train" if train else "val"
         split_dir = os.path.join(data_dir, split)
+        if not os.path.exists(split_dir):
+            raise ValueError(f"ImageNette {split} directory not found: {split_dir}")
         dataset = datasets.ImageFolder(root=split_dir, transform=transform)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
