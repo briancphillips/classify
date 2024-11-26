@@ -82,10 +82,22 @@ class GradientAscentAttack(PoisonAttack):
                 data = data / 255.0  # Normalize to [0, 1]
             elif isinstance(base_dataset, datasets.GTSRB):
                 all_data = []
+                transform = transforms.Compose(
+                    [
+                        transforms.Resize(
+                            (32, 32),
+                            interpolation=transforms.InterpolationMode.BILINEAR,
+                        ),
+                        transforms.ToTensor(),
+                        transforms.Normalize(
+                            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                        ),
+                    ]
+                )
                 for idx in dataset.indices:
                     img_path, _ = base_dataset._samples[idx]
                     img = Image.open(img_path).convert("RGB")
-                    img_tensor = transforms.ToTensor()(img)
+                    img_tensor = transform(img)
                     all_data.append(img_tensor)
                 data = torch.stack(all_data)
             elif isinstance(base_dataset, datasets.ImageFolder):
