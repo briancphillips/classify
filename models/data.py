@@ -116,7 +116,7 @@ def get_dataset(
     elif dataset_name.lower() == "gtsrb":
         split = "train" if train else "test"
         dataset = datasets.GTSRB(
-            root=data_dir, split=split, download=False, transform=transform
+            root=data_dir, split=split, download=True, transform=transform
         )
     elif dataset_name.lower() == "imagenette":
         # Use existing ImageNette directory structure
