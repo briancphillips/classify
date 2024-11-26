@@ -65,7 +65,7 @@ def train_model(
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            start_epoch, _, early_stopping_state = load_checkpoint(
+            epoch, _, early_stopping_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
@@ -77,10 +77,11 @@ def train_model(
                 patience_counter = early_stopping_state["patience_counter"]
                 history = early_stopping_state["history"]
                 best_val_loss = early_stopping_state["best_val_loss"]
+                start_epoch = epoch + 1  # Start from next epoch
+                last_epoch = epoch
                 logger.info(
-                    f"Resumed training from epoch {start_epoch + 1} with best val loss: {best_val_loss:.4f}"
+                    f"Resumed training from epoch {start_epoch} with best val loss: {best_val_loss:.4f}"
                 )
-            last_epoch = start_epoch
         except Exception as e:
             logger.warning(f"Failed to load checkpoint: {str(e)}")
             start_epoch = 0
@@ -320,9 +321,6 @@ def load_checkpoint(
 
     Returns:
         tuple: (epoch, loss, early_stopping_state) loaded from checkpoint
-
-    Raises:
-        ValueError: If checkpoint format is invalid
     """
     import os
 
@@ -346,8 +344,8 @@ def load_checkpoint(
         loss = checkpoint.get("loss", float("inf"))
         early_stopping_state = checkpoint.get("early_stopping_state", None)
 
-        logger.info(f"Loaded checkpoint from {path} (epoch {epoch})")
-        return epoch + 1, loss, early_stopping_state
+        logger.info(f"Loaded checkpoint from {path} (epoch {epoch + 1})")
+        return epoch, loss, early_stopping_state
 
     except Exception as e:
         logger.error(f"Failed to load checkpoint: {e}")
