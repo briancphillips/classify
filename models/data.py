@@ -139,14 +139,13 @@ def get_dataset(
     # Get dataset root directory
     data_dir = os.path.join("data", dataset_name.lower())
 
-    # Verify dataset directory exists
-    if not os.path.exists(data_dir):
-        raise ValueError(f"Dataset directory not found: {data_dir}")
+    # Create dataset directory if it doesn't exist
+    os.makedirs(data_dir, exist_ok=True)
 
     # Load appropriate dataset
     if dataset_name.lower() == "cifar100":
         dataset = datasets.CIFAR100(
-            root=data_dir, train=train, download=False, transform=transform
+            root=data_dir, train=train, download=True, transform=transform
         )
     elif dataset_name.lower() == "gtsrb":
         split = "train" if train else "test"
