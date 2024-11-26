@@ -98,9 +98,10 @@ def get_dataset(
             # GTSRB specific transform to handle varying image sizes
             transform = transforms.Compose(
                 [
-                    transforms.PILToTensor(),  # Convert PIL to tensor first
-                    transforms.ConvertImageDtype(torch.float32),  # Convert to float
-                    transforms.Resize((32, 32), antialias=True),  # Resize tensor
+                    transforms.Resize(
+                        (32, 32), interpolation=transforms.InterpolationMode.BILINEAR
+                    ),
+                    transforms.ToTensor(),
                     transforms.Normalize(
                         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
                     ),
