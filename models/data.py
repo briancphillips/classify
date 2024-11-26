@@ -15,21 +15,21 @@ logger = get_logger(__name__)
 __all__ = ["get_dataset"]
 
 
-def download_imagenette(data_dir: str, split: str = "train"):
-    """Download and extract ImageNette dataset."""
-    # ImageNette v2-160 URLs
-    urls = {
-        "train": "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz",
-    }
-
-    if split not in urls:
-        raise ValueError(f"Invalid split: {split}")
-
-    url = urls[split]
+def setup_imagenette(data_dir: str) -> None:
+    """Set up ImageNette dataset directory structure."""
+    # ImageNette v2-160 URL
+    url = "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz"
     filename = os.path.join(data_dir, os.path.basename(url))
 
     # Create directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
+
+    # Check if dataset is already properly set up
+    if os.path.exists(os.path.join(data_dir, "train")) and os.path.exists(
+        os.path.join(data_dir, "val")
+    ):
+        logger.info("ImageNette dataset already set up")
+        return
 
     # Download file if it doesn't exist
     if not os.path.exists(filename):
@@ -55,19 +55,22 @@ def download_imagenette(data_dir: str, split: str = "train"):
         with tarfile.open(filename, "r:gz") as tar:
             tar.extractall(path=data_dir)
 
-    # Set up train and val directories
-    train_dir = os.path.join(data_dir, "train")
-    val_dir = os.path.join(data_dir, "val")
+    # Move directories to correct location
+    train_src = os.path.join(src_dir, "train")
+    val_src = os.path.join(src_dir, "val")
+    train_dst = os.path.join(data_dir, "train")
+    val_dst = os.path.join(data_dir, "val")
 
-    # Remove existing directories if they exist
-    if os.path.exists(train_dir):
-        shutil.rmtree(train_dir)
-    if os.path.exists(val_dir):
-        shutil.rmtree(val_dir)
+    if not os.path.exists(train_dst):
+        shutil.move(train_src, train_dst)
+    if not os.path.exists(val_dst):
+        shutil.move(val_src, val_dst)
 
-    # Copy directories instead of using symlinks
-    shutil.copytree(os.path.join(src_dir, "train"), train_dir)
-    shutil.copytree(os.path.join(src_dir, "val"), val_dir)
+    # Clean up
+    if os.path.exists(src_dir):
+        shutil.rmtree(src_dir)
+    if os.path.exists(filename):
+        os.remove(filename)
 
     logger.info("ImageNette dataset setup complete")
 
@@ -77,7 +80,6 @@ def get_dataset(
     train: bool = True,
     subset_size: Optional[int] = None,
     transform: Optional[transforms.Compose] = None,
-    download: bool = True,
 ) -> Dataset:
     """Get dataset by name.
 
@@ -86,7 +88,6 @@ def get_dataset(
         train: Whether to get training or test set
         subset_size: Optional number of samples per class
         transform: Optional transform to apply
-        download: Whether to download dataset if not found
 
     Returns:
         Dataset: The requested dataset
@@ -103,39 +104,49 @@ def get_dataset(
     # Get dataset root directory
     data_dir = os.path.join("data", dataset_name.lower())
 
-    # Create directory if it doesn't exist and download is True
-    if download:
-        os.makedirs(data_dir, exist_ok=True)
+    # Verify dataset directory exists
+    if not os.path.exists(data_dir):
+        raise ValueError(f"Dataset directory not found: {data_dir}")
 
     # Load appropriate dataset
     if dataset_name.lower() == "cifar100":
         dataset = datasets.CIFAR100(
-            root=data_dir, train=train, download=download, transform=transform
+            root=data_dir, train=train, download=False, transform=transform
         )
     elif dataset_name.lower() == "gtsrb":
         split = "train" if train else "test"
         dataset = datasets.GTSRB(
-            root=data_dir, split=split, download=download, transform=transform
+            root=data_dir, split=split, download=False, transform=transform
         )
     elif dataset_name.lower() == "imagenette":
         # Use existing ImageNette directory structure
         split = "train" if train else "val"
         split_dir = os.path.join(data_dir, split)
-
-        # Set up ImageNette if needed
-        if download and not os.path.exists(split_dir):
-            download_imagenette(data_dir)
-
         if not os.path.exists(split_dir):
-            raise RuntimeError(f"ImageNette {split} directory not found: {split_dir}")
-
+            raise ValueError(f"ImageNette {split} directory not found: {split_dir}")
         dataset = datasets.ImageFolder(root=split_dir, transform=transform)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
     # Create subset if requested
     if subset_size is not None:
-        dataset = create_subset(dataset, subset_size)
+        # Get indices for each class
+        labels = [dataset[i][1] for i in range(len(dataset))]
+        unique_labels = sorted(list(set(labels)))
+
+        # Select subset_size samples from each class
+        subset_indices = []
+        for label in unique_labels:
+            label_indices = [i for i, l in enumerate(labels) if l == label]
+            if len(label_indices) > subset_size:
+                selected_indices = np.random.choice(
+                    label_indices, subset_size, replace=False
+                )
+                subset_indices.extend(selected_indices)
+            else:
+                subset_indices.extend(label_indices)
+
+        dataset = Subset(dataset, subset_indices)
         logger.info(f"\nDataset: {dataset_name.upper()}")
         logger.info(f"Training samples: {len(dataset)}")
         logger.info(f"Test samples: {len(dataset)}")

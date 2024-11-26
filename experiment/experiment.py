@@ -60,19 +60,12 @@ class PoisonExperiment:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
         # Get datasets
-        try:
-            self.train_dataset = get_dataset(
-                dataset_name, train=True, subset_size=subset_size, transform=None
-            )
-            self.test_dataset = get_dataset(
-                dataset_name, train=False, subset_size=subset_size, transform=None
-            )
-        except RuntimeError as e:
-            logger.error(f"Failed to load dataset {dataset_name}: {str(e)}")
-            logger.info(
-                "Please ensure you have internet connection for first-time dataset download"
-            )
-            raise
+        self.train_dataset = get_dataset(
+            dataset_name, train=True, subset_size=subset_size
+        )
+        self.test_dataset = get_dataset(
+            dataset_name, train=False, subset_size=subset_size
+        )
 
         # Create data loaders
         self.train_loader = DataLoader(

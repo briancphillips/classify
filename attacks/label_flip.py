@@ -201,7 +201,11 @@ class LabelFlipAttack(PoisonAttack):
         with torch.no_grad():
             for idx in indices:
                 img, _ = dataset[idx]
-                img = self.prepare_input(img)
+                if not isinstance(img, torch.Tensor):
+                    img = transforms.ToTensor()(img)
+                    if len(img.shape) == 3:
+                        img = img.unsqueeze(0)
+                img = img.to(self.device)
                 output = self.model(img)
                 pred = output.argmax(1).item()
                 if pred != all_labels[idx]:  # Different from original label
@@ -302,10 +306,3 @@ class LabelFlipAttack(PoisonAttack):
                 correct += predicted.eq(targets).sum().item()
 
         return 100.0 * correct / total
-
-    def prepare_input(self, x):
-        if not isinstance(x, torch.Tensor):
-            x = transforms.ToTensor()(x)
-        if len(x.shape) == 3:
-            x = x.unsqueeze(0)
-        return x.to(self.device)
