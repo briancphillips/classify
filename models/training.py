@@ -61,19 +61,31 @@ def train_model(
     patience_counter = 0
     history = {"train_loss": [], "val_loss": []}
     last_epoch = 0
-    should_stop = False
 
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            epoch, last_loss, early_stopping_state = load_checkpoint(
+            # First try to load the best checkpoint
+            epoch, loss, early_stopping_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
                 optimizer=optimizer,
                 device=device,
-                load_best=False,
+                load_best=True,
             )
+
+            # If no best checkpoint, try latest
+            if epoch == 0:
+                epoch, loss, early_stopping_state = load_checkpoint(
+                    model,
+                    checkpoint_dir,
+                    checkpoint_name,
+                    optimizer=optimizer,
+                    device=device,
+                    load_best=False,
+                )
+
             if early_stopping_state:
                 patience_counter = early_stopping_state["patience_counter"]
                 history = early_stopping_state["history"]
@@ -84,8 +96,8 @@ def train_model(
                 # Check if we should stop immediately
                 if patience_counter >= early_stopping_patience:
                     logger.info(
-                        f"Early stopping condition already met (patience={patience_counter}, best_val_loss={best_val_loss:.4f}). "
-                        "Not resuming training."
+                        f"Early stopping condition already met (patience={patience_counter}, "
+                        f"best_val_loss={best_val_loss:.4f}). Training complete."
                     )
                     return last_epoch + 1, best_val_loss
 
@@ -99,8 +111,7 @@ def train_model(
 
     try:
         for epoch in range(start_epoch, epochs):
-            last_epoch = epoch  # Update last_epoch at the start of each epoch
-            # Training phase
+            last_epoch = epoch
             model.train()
             train_loss = 0
             total_batches = len(train_loader)
