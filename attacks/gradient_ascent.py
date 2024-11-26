@@ -58,11 +58,19 @@ class GradientAscentAttack(PoisonAttack):
 
         # Convert dataset to tensor format
         if isinstance(dataset, datasets.ImageFolder):
-            # For ImageFolder datasets, load all images into memory
+            # For ImageFolder datasets, load and resize all images to a consistent size
             all_data = []
+            target_size = (224, 224)  # Standard ImageNet size
+            transform = transforms.Compose(
+                [
+                    transforms.Resize(target_size),
+                    transforms.ToTensor(),
+                ]
+            )
             for img_path, _ in dataset.samples:
-                img = transforms.ToTensor()(Image.open(img_path).convert("RGB"))
-                all_data.append(img)
+                img = Image.open(img_path).convert("RGB")
+                img_tensor = transform(img)
+                all_data.append(img_tensor)
             data = torch.stack(all_data)
         elif hasattr(dataset, "data"):
             # For datasets with .data attribute (e.g., CIFAR100)
@@ -115,6 +123,12 @@ class GradientAscentAttack(PoisonAttack):
             for idx in indices:
                 img_path = poisoned_dataset.samples[idx][0]
                 perturbed_img = transforms.ToPILImage()(poisoned_data[idx].cpu())
+                # Resize back to original size if needed
+                original_img = Image.open(img_path)
+                if perturbed_img.size != original_img.size:
+                    perturbed_img = perturbed_img.resize(
+                        original_img.size, Image.BILINEAR
+                    )
                 perturbed_img.save(img_path)
         elif hasattr(poisoned_dataset, "data"):
             # For datasets with .data attribute
