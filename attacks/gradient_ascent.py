@@ -185,6 +185,8 @@ class GradientAscentAttack(PoisonAttack):
                     if hasattr(base_dataset, "_samples"):
                         img_path, target = base_dataset._samples[base_idx]
                         perturbed_img = transforms.ToPILImage()(poisoned_data[i].cpu())
+                        # Resize to match the transform size
+                        perturbed_img = perturbed_img.resize((32, 32), Image.BILINEAR)
                         perturbed_img.save(img_path)
                 elif isinstance(base_dataset, datasets.ImageFolder):
                     img_path = base_dataset.samples[base_idx][0]
