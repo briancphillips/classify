@@ -15,21 +15,21 @@ logger = get_logger(__name__)
 __all__ = ["get_dataset"]
 
 
-def setup_imagenette(data_dir: str) -> None:
-    """Set up ImageNette dataset directory structure."""
-    # ImageNette v2-160 URL
-    url = "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz"
+def download_imagenette(data_dir: str, split: str = "train"):
+    """Download and extract ImageNette dataset."""
+    # ImageNette v2-160 URLs
+    urls = {
+        "train": "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz",
+    }
+
+    if split not in urls:
+        raise ValueError(f"Invalid split: {split}")
+
+    url = urls[split]
     filename = os.path.join(data_dir, os.path.basename(url))
 
     # Create directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
-
-    # Check if dataset is already properly set up
-    if os.path.exists(os.path.join(data_dir, "train")) and os.path.exists(
-        os.path.join(data_dir, "val")
-    ):
-        logger.info("ImageNette dataset already set up")
-        return
 
     # Download file if it doesn't exist
     if not os.path.exists(filename):
@@ -55,22 +55,19 @@ def setup_imagenette(data_dir: str) -> None:
         with tarfile.open(filename, "r:gz") as tar:
             tar.extractall(path=data_dir)
 
-    # Move directories to correct location
-    train_src = os.path.join(src_dir, "train")
-    val_src = os.path.join(src_dir, "val")
-    train_dst = os.path.join(data_dir, "train")
-    val_dst = os.path.join(data_dir, "val")
+    # Set up train and val directories
+    train_dir = os.path.join(data_dir, "train")
+    val_dir = os.path.join(data_dir, "val")
 
-    if not os.path.exists(train_dst):
-        shutil.move(train_src, train_dst)
-    if not os.path.exists(val_dst):
-        shutil.move(val_src, val_dst)
+    # Remove existing directories if they exist
+    if os.path.exists(train_dir):
+        shutil.rmtree(train_dir)
+    if os.path.exists(val_dir):
+        shutil.rmtree(val_dir)
 
-    # Clean up
-    if os.path.exists(src_dir):
-        shutil.rmtree(src_dir)
-    if os.path.exists(filename):
-        os.remove(filename)
+    # Copy directories instead of using symlinks
+    shutil.copytree(os.path.join(src_dir, "train"), train_dir)
+    shutil.copytree(os.path.join(src_dir, "val"), val_dir)
 
     logger.info("ImageNette dataset setup complete")
 
@@ -127,7 +124,7 @@ def get_dataset(
 
         # Set up ImageNette if needed
         if download and not os.path.exists(split_dir):
-            setup_imagenette(data_dir)
+            download_imagenette(data_dir)
 
         if not os.path.exists(split_dir):
             raise RuntimeError(f"ImageNette {split} directory not found: {split_dir}")
