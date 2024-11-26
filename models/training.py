@@ -65,26 +65,15 @@ def train_model(
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            # First try to load the best checkpoint
+            # Try to load the latest checkpoint first
             epoch, loss, early_stopping_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
                 optimizer=optimizer,
                 device=device,
-                load_best=True,
+                load_best=False,
             )
-
-            # If no best checkpoint, try latest
-            if epoch == 0:
-                epoch, loss, early_stopping_state = load_checkpoint(
-                    model,
-                    checkpoint_dir,
-                    checkpoint_name,
-                    optimizer=optimizer,
-                    device=device,
-                    load_best=False,
-                )
 
             if early_stopping_state:
                 patience_counter = early_stopping_state["patience_counter"]
