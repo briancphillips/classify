@@ -32,7 +32,7 @@ def create_poison_attack(
     if config.poison_type == PoisonType.PGD:
         logger.info("Creating PGD attack")
         return PGDPoisonAttack(config, device)
-    elif config.poison_type == PoisonType.GA:
+    elif config.poison_type == PoisonType.GRADIENT_ASCENT:
         logger.info("Creating Gradient Ascent attack")
         return GradientAscentAttack(config, device)
     elif config.poison_type in [
@@ -40,7 +40,7 @@ def create_poison_attack(
         PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
         PoisonType.LABEL_FLIP_SOURCE_TO_TARGET,
     ]:
-        logger.info(f"Creating Label Flip attack: {config.poison_type.value}")
+        logger.info("Creating Label Flip attack")
         return LabelFlipAttack(config, device)
     else:
         raise ValueError(f"Unknown poison type: {config.poison_type}")
