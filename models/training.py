@@ -65,7 +65,7 @@ def train_model(
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            start_epoch, best_val_loss = load_checkpoint(
+            start_epoch, best_val_loss, early_stopping_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
@@ -73,6 +73,9 @@ def train_model(
                 device=device,
                 load_best=False,
             )
+            if early_stopping_state:
+                patience_counter = early_stopping_state["patience_counter"]
+                history = early_stopping_state["history"]
             logger.info(f"Resumed training from epoch {start_epoch + 1}")
             last_epoch = start_epoch
         except Exception as e:
@@ -108,6 +111,10 @@ def train_model(
                 # Save checkpoint every 100 batches
                 if (batch_idx + 1) % 100 == 0:
                     if checkpoint_dir and checkpoint_name:
+                        early_stopping_state = {
+                            "patience_counter": patience_counter,
+                            "history": history,
+                        }
                         save_checkpoint(
                             model,
                             checkpoint_dir,
@@ -115,6 +122,7 @@ def train_model(
                             optimizer=optimizer,
                             epoch=epoch,
                             loss=train_loss / (batch_idx + 1),
+                            early_stopping_state=early_stopping_state,
                         )
 
                 if (batch_idx + 1) % 10 == 0:
@@ -135,6 +143,10 @@ def train_model(
                     best_val_loss = val_loss
                     patience_counter = 0
                     if checkpoint_dir and checkpoint_name:
+                        early_stopping_state = {
+                            "patience_counter": patience_counter,
+                            "history": history,
+                        }
                         save_checkpoint(
                             model,
                             checkpoint_dir,
@@ -143,6 +155,7 @@ def train_model(
                             epoch=epoch,
                             loss=val_loss,
                             is_best=True,
+                            early_stopping_state=early_stopping_state,
                         )
                 else:
                     patience_counter += 1
@@ -163,6 +176,10 @@ def train_model(
 
             # Save regular checkpoint at end of epoch
             if checkpoint_dir and checkpoint_name:
+                early_stopping_state = {
+                    "patience_counter": patience_counter,
+                    "history": history,
+                }
                 save_checkpoint(
                     model,
                     checkpoint_dir,
@@ -170,12 +187,17 @@ def train_model(
                     optimizer=optimizer,
                     epoch=epoch,
                     loss=train_loss,
+                    early_stopping_state=early_stopping_state,
                 )
 
     except Exception as e:
         logger.error(f"Error during training: {str(e)}")
         # Save checkpoint on error
         if checkpoint_dir and checkpoint_name:
+            early_stopping_state = {
+                "patience_counter": patience_counter,
+                "history": history,
+            }
             save_checkpoint(
                 model,
                 checkpoint_dir,
@@ -183,6 +205,7 @@ def train_model(
                 optimizer=optimizer,
                 epoch=last_epoch,
                 loss=train_loss if "train_loss" in locals() else float("inf"),
+                early_stopping_state=early_stopping_state,
             )
         raise e
 
@@ -224,6 +247,7 @@ def save_checkpoint(
     epoch: Optional[int] = None,
     loss: Optional[float] = None,
     is_best: bool = False,
+    early_stopping_state: Optional[Dict] = None,
 ) -> None:
     """Save a model checkpoint.
 
@@ -235,6 +259,7 @@ def save_checkpoint(
         epoch: Optional epoch number
         loss: Optional loss value
         is_best: If True, also save as best checkpoint
+        early_stopping_state: Optional dictionary containing early stopping state
     """
     import os
 
@@ -249,6 +274,9 @@ def save_checkpoint(
 
     if optimizer:
         checkpoint["optimizer_state_dict"] = optimizer.state_dict()
+
+    if early_stopping_state:
+        checkpoint["early_stopping_state"] = early_stopping_state
 
     # Save latest checkpoint
     path = os.path.join(checkpoint_dir, f"{name}_latest.pt")
@@ -269,7 +297,7 @@ def load_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
     device: Optional[torch.device] = None,
     load_best: bool = False,
-) -> Tuple[int, float]:
+) -> Tuple[int, float, Optional[Dict]]:
     """Load a model checkpoint.
 
     Args:
@@ -281,7 +309,7 @@ def load_checkpoint(
         load_best: If True, load the best checkpoint instead of latest
 
     Returns:
-        tuple: (epoch, loss) loaded from checkpoint
+        tuple: (epoch, loss, early_stopping_state) loaded from checkpoint
 
     Raises:
         ValueError: If checkpoint format is invalid
@@ -293,7 +321,7 @@ def load_checkpoint(
 
     if not os.path.exists(path):
         logger.warning(f"No checkpoint found at {path}")
-        return 0, float("inf")
+        return 0, float("inf"), None
 
     try:
         checkpoint = torch.load(path, map_location=device, weights_only=True)
@@ -306,10 +334,11 @@ def load_checkpoint(
 
         epoch = checkpoint.get("epoch", -1)
         loss = checkpoint.get("loss", float("inf"))
+        early_stopping_state = checkpoint.get("early_stopping_state", None)
 
         logger.info(f"Loaded checkpoint from {path} (epoch {epoch})")
-        return epoch + 1, loss
+        return epoch + 1, loss, early_stopping_state
 
     except Exception as e:
         logger.error(f"Failed to load checkpoint: {e}")
-        return 0, float("inf")
+        return 0, float("inf"), None

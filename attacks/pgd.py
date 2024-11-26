@@ -235,6 +235,14 @@ class PGDPoisonAttack(PoisonAttack):
         # Initialize perturbation
         delta = torch.zeros_like(image, requires_grad=True)
 
+        # Create a random target different from the original
+        random_target = torch.randint(
+            0, num_classes - 1, target.shape, device=target.device
+        )
+        random_target = (
+            random_target + (random_target >= target).long()
+        )  # Ensure different class
+
         for step in range(num_steps):
             self.model.zero_grad()
 
@@ -243,7 +251,9 @@ class PGDPoisonAttack(PoisonAttack):
 
             # Forward pass
             output = self.model(perturbed_image)
-            loss = F.cross_entropy(output, target)
+
+            # Maximize loss for correct class (minimize probability of correct class)
+            loss = -F.cross_entropy(output, target)  # Negative sign for maximization
             loss.backward()
 
             # Update perturbation with gradient ascent
