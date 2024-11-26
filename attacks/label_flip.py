@@ -223,10 +223,14 @@ class LabelFlipAttack(PoisonAttack):
                     success_count += 1
                 total_poison += 1
 
-        result.poison_success_rate = (
+        # Convert to Python float for JSON serialization
+        result.poison_success_rate = float(
             100.0 * success_count / total_poison if total_poison > 0 else 0.0
         )
-        result.poisoned_indices = indices
+        # Convert indices to Python list for JSON serialization
+        result.poisoned_indices = (
+            indices.tolist() if isinstance(indices, np.ndarray) else list(indices)
+        )
 
         logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
         logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
