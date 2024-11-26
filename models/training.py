@@ -61,13 +61,24 @@ def train_model(
     patience_counter = 0
     history = {"train_loss": [], "val_loss": []}
     last_epoch = 0
-    early_stopped = False
 
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            # Try to load the latest checkpoint
-            epoch, loss, early_stopping_state = load_checkpoint(
+            # First try to load best checkpoint to get best val loss
+            _, _, best_state = load_checkpoint(
+                model,
+                checkpoint_dir,
+                checkpoint_name,
+                optimizer=None,  # Don't load optimizer state from best
+                device=device,
+                load_best=True,
+            )
+            if best_state:
+                best_val_loss = best_state.get("best_val_loss", float("inf"))
+
+            # Then load latest checkpoint for continuing training
+            epoch, loss, latest_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
@@ -76,13 +87,12 @@ def train_model(
                 load_best=False,
             )
 
-            if early_stopping_state:
-                patience_counter = early_stopping_state.get("patience_counter", 0)
-                history = early_stopping_state.get(
+            if latest_state:
+                patience_counter = latest_state.get("patience_counter", 0)
+                history = latest_state.get(
                     "history", {"train_loss": [], "val_loss": []}
                 )
-                best_val_loss = early_stopping_state.get("best_val_loss", float("inf"))
-                early_stopped = early_stopping_state.get("early_stopped", False)
+                early_stopped = latest_state.get("early_stopped", False)
 
                 if early_stopped:
                     logger.info(
@@ -94,23 +104,6 @@ def train_model(
                     logger.info(
                         f"Early stopping condition met (patience={patience_counter}, "
                         f"best_val_loss={best_val_loss:.4f}). Training complete."
-                    )
-
-                    # Save final state with early_stopped flag
-                    early_stopping_state = {
-                        "patience_counter": patience_counter,
-                        "history": history,
-                        "best_val_loss": best_val_loss,
-                        "early_stopped": True,
-                    }
-                    save_checkpoint(
-                        model,
-                        checkpoint_dir,
-                        checkpoint_name,
-                        optimizer=optimizer,
-                        epoch=epoch,
-                        loss=loss,
-                        early_stopping_state=early_stopping_state,
                     )
                     return epoch + 1, best_val_loss
 
