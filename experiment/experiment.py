@@ -22,6 +22,7 @@ class PoisonExperiment:
     def __init__(
         self,
         dataset_name: str,
+        configs: List[PoisonConfig],
         batch_size: int = 128,
         epochs: int = 30,
         learning_rate: float = 0.001,
@@ -35,6 +36,7 @@ class PoisonExperiment:
 
         Args:
             dataset_name: Name of dataset to use
+            configs: List of poisoning configurations to run
             batch_size: Batch size for training
             epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
@@ -45,6 +47,7 @@ class PoisonExperiment:
             checkpoint_dir: Directory to save checkpoints
         """
         self.dataset_name = dataset_name
+        self.configs = configs
         self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
@@ -89,6 +92,7 @@ class PoisonExperiment:
         logger.info(f"Using device: {self.device}")
         logger.info(f"Training samples: {len(self.train_dataset)}")
         logger.info(f"Test samples: {len(self.test_dataset)}")
+        logger.info(f"Running {len(self.configs)} poisoning configurations")
 
     def run(self) -> List[PoisonResult]:
         """Run all configured poisoning experiments.

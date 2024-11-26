@@ -206,7 +206,7 @@ def main():
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        subset_size_per_class=args.subset_size,
+        subset_size=args.subset_size,
     )
 
     try:
