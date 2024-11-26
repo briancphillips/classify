@@ -8,22 +8,40 @@ logger = get_logger(__name__)
 
 
 class CIFAR100Classifier(nn.Module):
-    """CIFAR100 classifier using WideResNet-28-10."""
+    """CIFAR100 classifier using a modified ResNet architecture."""
 
     def __init__(self, num_classes=100):
         super(CIFAR100Classifier, self).__init__()
-        # Create a WideResNet with depth=28 and width=10
-        self.backbone = torchvision.models.wide_resnet50_2(weights=None)
 
-        # Modify first conv layer and maxpool for CIFAR-100
+        # Use ResNet18 as base, more appropriate for CIFAR100
+        self.backbone = torchvision.models.resnet18(weights=None)
+
+        # Modify first conv layer for CIFAR-100's 32x32 images
         self.backbone.conv1 = nn.Conv2d(
             3, 64, kernel_size=3, stride=1, padding=1, bias=False
         )
-        self.backbone.maxpool = nn.Identity()
+        self.backbone.maxpool = nn.Identity()  # Remove maxpool as input is small
 
-        # Adjust the final fully connected layer
+        # Add intermediate dropout layers
+        self.dropout1 = nn.Dropout(0.2)  # Light dropout after early layers
+        self.dropout2 = nn.Dropout(0.3)  # Medium dropout in the middle
+        self.dropout3 = nn.Dropout(0.4)  # Stronger dropout near the end
+
+        # Modify the final fully connected layer with better regularization
         num_ftrs = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(num_ftrs, num_classes)
+        self.backbone.fc = nn.Sequential(
+            nn.BatchNorm1d(num_ftrs),
+            self.dropout2,
+            nn.Linear(num_ftrs, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            self.dropout3,
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            self.dropout3,
+            nn.Linear(512, num_classes),
+        )
 
         # Initialize weights
         self._initialize_weights()
@@ -32,18 +50,39 @@ class CIFAR100Classifier(nn.Module):
         """Initialize model weights."""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
+                # Use MSRA initialization for conv layers
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
+            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
+                # Use smaller std for linear layers
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        return self.backbone(x)
+        # Initial layers
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
+
+        # Add dropout after initial feature extraction
+        x = self.dropout1(x)
+
+        # ResNet blocks with intermediate dropout
+        x = self.backbone.layer1(x)
+        x = self.backbone.layer2(x)
+        x = self.dropout2(x)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x)
+
+        # Global pooling and final classifier
+        x = self.backbone.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.backbone.fc(x)
+        return x
 
     def extract_features(self, x):
         x = self.backbone.conv1(x)
@@ -53,7 +92,7 @@ class CIFAR100Classifier(nn.Module):
         x = self.backbone.layer2(x)
         x = self.backbone.layer3(x)
         x = self.backbone.layer4(x)
-        x = nn.AdaptiveAvgPool2d((1, 1))(x)
+        x = self.backbone.avgpool(x)
         x = torch.flatten(x, 1)
         return x
 

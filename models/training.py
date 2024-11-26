@@ -18,9 +18,10 @@ def train_model(
     val_loader: Optional[DataLoader] = None,
     epochs: int = 100,
     device: Optional[torch.device] = None,
-    early_stopping_patience: int = 25,
+    early_stopping_patience: int = 10,
     gradient_clip_val: float = 1.0,
     learning_rate: float = 0.001,
+    weight_decay: float = 0.0001,
     checkpoint_dir: Optional[str] = None,
     checkpoint_name: Optional[str] = None,
     resume_training: bool = False,
@@ -36,6 +37,7 @@ def train_model(
         early_stopping_patience: Number of epochs to wait before early stopping
         gradient_clip_val: Maximum gradient norm
         learning_rate: Learning rate for optimizer
+        weight_decay: L2 regularization factor
         checkpoint_dir: Optional directory to save checkpoints
         checkpoint_name: Optional name for checkpoint files
         resume_training: Whether to try to resume from checkpoint
@@ -47,9 +49,11 @@ def train_model(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=10, verbose=True
+        optimizer, mode="min", factor=0.2, patience=5, verbose=True
     )
 
     start_epoch = 0
