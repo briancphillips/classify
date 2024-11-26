@@ -142,9 +142,9 @@ def create_attack_configs(args) -> List[PoisonConfig]:
             PoisonConfig(
                 poison_type=PoisonType.GRADIENT_ASCENT,
                 poison_ratio=args.poison_ratio,
-                ga_pop_size=50,
-                ga_generations=100,
-                ga_mutation_rate=0.1,
+                ga_steps=50,
+                ga_iterations=100,
+                ga_lr=0.1,
                 random_seed=42,
             )
         )
