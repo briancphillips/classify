@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import os
 from typing import List, Optional
 from tqdm import tqdm
+import numpy as np
 
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
@@ -100,6 +101,12 @@ class PoisonExperiment:
         Returns:
             list: Results from all experiments
         """
+        # Set seeds for reproducibility
+        torch.manual_seed(42)
+        np.random.seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(42)
+
         results = []
 
         # First train clean model

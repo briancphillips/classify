@@ -21,6 +21,12 @@ class LabelFlipAttack(PoisonAttack):
         self, dataset: Dataset, model: nn.Module
     ) -> Tuple[Dataset, PoisonResult]:
         """Poison a dataset by flipping labels according to the specified strategy."""
+        # Validate configuration
+        if not 0 <= self.config.poison_ratio <= 1:
+            raise ValueError("Poison ratio must be between 0 and 1")
+        if len(dataset) == 0:
+            raise ValueError("Dataset is empty")
+
         # Store model for evaluation
         self.model = model.to(self.device)
         self.model.eval()
@@ -291,18 +297,24 @@ class LabelFlipAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, targets in dataloader:
-                # Convert inputs to proper tensor format if needed
+                # DataLoader should already give us batched inputs (B,C,H,W)
                 if not isinstance(inputs, torch.Tensor):
                     inputs = transforms.ToTensor()(inputs)
-                if len(inputs.shape) == 3:
-                    inputs = inputs.unsqueeze(0)
+                    inputs = inputs.unsqueeze(0)  # Add batch dim if single image
 
                 inputs, targets = move_to_device(inputs, self.device), move_to_device(
                     targets, self.device
                 )
-                outputs = self.model(inputs)
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
+
+                try:
+                    outputs = self.model(inputs)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+                except RuntimeError as e:
+                    logger.error(
+                        f"Error processing batch - input shape: {inputs.shape}"
+                    )
+                    raise e
 
         return 100.0 * correct / total

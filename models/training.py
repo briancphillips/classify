@@ -290,13 +290,7 @@ def load_checkpoint(
         return 0, float("inf")
 
     try:
-        checkpoint = torch.load(path, map_location=device)
-        if not isinstance(checkpoint, dict):
-            raise ValueError("Invalid checkpoint format")
-
-        if "model_state_dict" not in checkpoint:
-            raise ValueError("Checkpoint missing model state dict")
-
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         if device is not None:
             model = model.to(device)
