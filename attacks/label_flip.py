@@ -297,10 +297,18 @@ class LabelFlipAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, targets in dataloader:
-                # DataLoader should already give us batched inputs (B,C,H,W)
+                # Handle tensor conversion and batching
                 if not isinstance(inputs, torch.Tensor):
                     inputs = transforms.ToTensor()(inputs)
-                    inputs = inputs.unsqueeze(0)  # Add batch dim if single image
+
+                # Ensure we have a batch dimension
+                if len(inputs.shape) == 3:  # (C,H,W)
+                    inputs = inputs.unsqueeze(0)  # Add batch -> (1,C,H,W)
+                elif len(inputs.shape) != 4:  # Not (B,C,H,W)
+                    logger.error(f"Unexpected input shape: {inputs.shape}")
+                    raise ValueError(
+                        f"Expected 3D or 4D input, got shape {inputs.shape}"
+                    )
 
                 inputs, targets = move_to_device(inputs, self.device), move_to_device(
                     targets, self.device
