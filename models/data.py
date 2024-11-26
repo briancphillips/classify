@@ -94,12 +94,24 @@ def get_dataset(
     """
     # Set up base transforms if none provided
     if transform is None:
-        transform = transforms.Compose(
-            [
-                transforms.Resize((32, 32)),
-                transforms.ToTensor(),
-            ]
-        )
+        if dataset_name.lower() == "gtsrb":
+            # GTSRB specific transform to handle varying image sizes
+            transform = transforms.Compose(
+                [
+                    transforms.Resize((32, 32)),  # Force resize to fixed dimensions
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                    ),
+                ]
+            )
+        else:
+            transform = transforms.Compose(
+                [
+                    transforms.Resize((32, 32)),
+                    transforms.ToTensor(),
+                ]
+            )
 
     # Get dataset root directory
     data_dir = os.path.join("data", dataset_name.lower())
