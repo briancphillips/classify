@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
-from models import train_model, get_model, get_dataset_loaders
+from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
 from utils.logging import get_logger
 from .evaluation import evaluate_model, evaluate_attack
@@ -17,60 +17,73 @@ logger = get_logger(__name__)
 
 
 class PoisonExperiment:
-    """Manages poisoning experiments"""
+    """Class to manage poisoning experiments."""
 
     def __init__(
         self,
         dataset_name: str,
-        configs: List[PoisonConfig],
-        output_dir: str = "results",
-        checkpoint_dir: str = "checkpoints",
-        device: Optional[torch.device] = None,
+        batch_size: int = 128,
         epochs: int = 30,
         learning_rate: float = 0.001,
-        batch_size: int = 128,
-        num_workers: int = 0,
-        subset_size_per_class: Optional[int] = None,
+        num_workers: int = 2,
+        subset_size: Optional[int] = None,
+        device: Optional[torch.device] = None,
+        output_dir: str = "results",
+        checkpoint_dir: str = "checkpoints",
     ):
         """Initialize experiment.
 
         Args:
-            dataset_name: Name of the dataset to use
-            configs: List of poisoning configurations to test
+            dataset_name: Name of dataset to use
+            batch_size: Batch size for training
+            epochs: Number of epochs to train
+            learning_rate: Learning rate for optimizer
+            num_workers: Number of workers for data loading
+            subset_size: Optional number of samples per class
+            device: Optional device to use
             output_dir: Directory to save results
             checkpoint_dir: Directory to save checkpoints
-            device: Device to use for training
-            epochs: Number of epochs to train
-            learning_rate: Learning rate for training
-            batch_size: Batch size for training
-            num_workers: Number of workers for data loading
-            subset_size_per_class: Optional size for balanced subset per class
         """
         self.dataset_name = dataset_name
-        self.configs = configs
-        self.output_dir = os.path.join(output_dir, dataset_name)
-        self.checkpoint_dir = os.path.join(checkpoint_dir, dataset_name)
-        self.device = device if device is not None else get_device()
+        self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
-        self.batch_size = batch_size
         self.num_workers = num_workers
-        self.subset_size_per_class = subset_size_per_class
-
-        # Create output directories
+        self.subset_size = subset_size
+        self.device = device if device is not None else get_device()
+        self.output_dir = os.path.join(output_dir, dataset_name)
+        self.checkpoint_dir = os.path.join(checkpoint_dir, dataset_name)
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
-        # Initialize model and datasets
-        self.model = get_model(dataset_name).to(self.device)
-        self.train_loader, self.test_loader, self.train_dataset, self.test_dataset = (
-            get_dataset_loaders(
-                dataset_name,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                subset_size_per_class=subset_size_per_class,
-            )
+        # Get datasets
+        self.train_dataset = get_dataset(
+            dataset_name, train=True, subset_size=subset_size
         )
+        self.test_dataset = get_dataset(
+            dataset_name, train=False, subset_size=subset_size
+        )
+
+        # Create data loaders
+        self.train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=False if num_workers == 0 else True,
+        )
+        self.test_loader = DataLoader(
+            self.test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True,
+            persistent_workers=False if num_workers == 0 else True,
+        )
+
+        # Create model
+        self.model = get_model(dataset_name).to(self.device)
 
         logger.info(f"Initialized experiment for {dataset_name} dataset")
         logger.info(f"Using device: {self.device}")

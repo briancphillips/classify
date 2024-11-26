@@ -12,6 +12,7 @@ def collect_poisoned_results():
     attack_type_map = {
         "pgd": "pgd",
         "gradient_ascent": "ga",
+        "label_flip": "label_flip",
         "label_flip_random_target": "label_flip",
         "label_flip_random_random": "label_flip",
         "label_flip_source_target": "label_flip",
@@ -23,11 +24,14 @@ def collect_poisoned_results():
 
         # Look for poison result files
         if os.path.exists(results_dir):
+            print(f"Found results directory for {dataset}")
             for file in os.listdir(results_dir):
                 if file.startswith("poison_results_") and file.endswith(".json"):
+                    print(f"Processing {file}")
                     with open(os.path.join(results_dir, file), "r") as f:
                         result = json.load(f)
                         attack_type = result["config"]["poison_type"]
+                        print(f"Found attack type: {attack_type}")
 
                         # Map the attack type to standard name
                         if attack_type in attack_type_map:
@@ -61,6 +65,8 @@ def collect_poisoned_results():
                                         "poison_success_rate"
                                     ],
                                 }
+        else:
+            print(f"No results directory found for {dataset}")
 
     return results
 
@@ -69,10 +75,11 @@ def collect_poisoned_results():
 results = collect_poisoned_results()
 
 # Save collected results
+os.makedirs("results", exist_ok=True)
 with open("results/poisoned_results.json", "w") as f:
     json.dump(results, f, indent=4)
 
-print("Collected results:")
+print("\nCollected results:")
 print(json.dumps(results, indent=2))
 
 # Generate plot
