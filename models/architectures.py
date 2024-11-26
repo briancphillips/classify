@@ -3,98 +3,117 @@ import torch.nn as nn
 import torchvision
 from torchvision import models
 from utils.logging import get_logger
+import torch.nn.functional as F
 
 logger = get_logger(__name__)
 
 
-class CIFAR100Classifier(nn.Module):
-    """CIFAR100 classifier using a modified ResNet architecture."""
-
-    def __init__(self, num_classes=100):
-        super(CIFAR100Classifier, self).__init__()
-
-        # Use ResNet18 as base, more appropriate for CIFAR100
-        self.backbone = torchvision.models.resnet18(weights=None)
-
-        # Modify first conv layer for CIFAR-100's 32x32 images
-        self.backbone.conv1 = nn.Conv2d(
-            3, 64, kernel_size=3, stride=1, padding=1, bias=False
-        )
-        self.backbone.maxpool = nn.Identity()  # Remove maxpool as input is small
-
-        # Add intermediate dropout layers
-        self.dropout1 = nn.Dropout(0.2)  # Light dropout after early layers
-        self.dropout2 = nn.Dropout(0.3)  # Medium dropout in the middle
-        self.dropout3 = nn.Dropout(0.4)  # Stronger dropout near the end
-
-        # Modify the final fully connected layer with better regularization
-        num_ftrs = self.backbone.fc.in_features
-        self.backbone.fc = nn.Sequential(
-            nn.BatchNorm1d(num_ftrs),
-            self.dropout2,
-            nn.Linear(num_ftrs, 1024),
-            nn.BatchNorm1d(1024),
-            nn.ReLU(inplace=True),
-            self.dropout3,
-            nn.Linear(1024, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(inplace=True),
-            self.dropout3,
-            nn.Linear(512, num_classes),
-        )
+class WideResNet(nn.Module):
+    """Wide ResNet implementation specifically designed for CIFAR100."""
+    
+    def __init__(self, depth=28, widen_factor=10, dropout_rate=0.3, num_classes=100):
+        super(WideResNet, self).__init__()
+        
+        nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
+        assert((depth - 4) % 6 == 0)
+        n = (depth - 4) // 6
+        
+        block = BasicBlock
+        
+        # 1st conv before any network block
+        self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1, padding=1, bias=False)
+        
+        # 1st block
+        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropout_rate)
+        
+        # 2nd block
+        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropout_rate)
+        
+        # 3rd block
+        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropout_rate)
+        
+        # global average pooling and classifier
+        self.bn1 = nn.BatchNorm2d(nChannels[3])
+        self.relu = nn.ReLU(inplace=True)
+        self.fc = nn.Linear(nChannels[3], num_classes)
+        
+        self.nChannels = nChannels[3]
 
         # Initialize weights
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        """Initialize model weights."""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                # Use MSRA initialization for conv layers
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
-                # Use smaller std for linear layers
-                nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
-
+                m.bias.data.zero_()
+    
     def forward(self, x):
-        # Initial layers
-        x = self.backbone.conv1(x)
-        x = self.backbone.bn1(x)
-        x = self.backbone.relu(x)
-
-        # Add dropout after initial feature extraction
-        x = self.dropout1(x)
-
-        # ResNet blocks with intermediate dropout
-        x = self.backbone.layer1(x)
-        x = self.backbone.layer2(x)
-        x = self.dropout2(x)
-        x = self.backbone.layer3(x)
-        x = self.backbone.layer4(x)
-
-        # Global pooling and final classifier
-        x = self.backbone.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.backbone.fc(x)
-        return x
+        out = self.conv1(x)
+        out = self.block1(out)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.relu(self.bn1(out))
+        out = F.avg_pool2d(out, 8)
+        out = out.view(-1, self.nChannels)
+        return self.fc(out)
 
     def extract_features(self, x):
-        x = self.backbone.conv1(x)
-        x = self.backbone.bn1(x)
-        x = self.backbone.relu(x)
-        x = self.backbone.layer1(x)
-        x = self.backbone.layer2(x)
-        x = self.backbone.layer3(x)
-        x = self.backbone.layer4(x)
-        x = self.backbone.avgpool(x)
-        x = torch.flatten(x, 1)
-        return x
+        out = self.conv1(x)
+        out = self.block1(out)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.relu(self.bn1(out))
+        out = F.avg_pool2d(out, 8)
+        return out.view(-1, self.nChannels)
+
+
+class BasicBlock(nn.Module):
+    """Basic Block for Wide ResNet."""
+    
+    def __init__(self, in_planes, out_planes, stride, dropout_rate=0.0):
+        super(BasicBlock, self).__init__()
+        self.bn1 = nn.BatchNorm2d(in_planes)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                              padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_planes)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_planes, out_planes, kernel_size=3, stride=1,
+                              padding=1, bias=False)
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.equalInOut = (in_planes == out_planes)
+        self.convShortcut = (not self.equalInOut) and nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride,
+                                                               padding=0, bias=False) or None
+
+    def forward(self, x):
+        if not self.equalInOut:
+            x = self.relu1(self.bn1(x))
+        else:
+            out = self.relu1(self.bn1(x))
+        out = self.relu2(self.bn2(self.conv1(out if self.equalInOut else x)))
+        out = self.dropout(out)
+        out = self.conv2(out)
+        return torch.add(x if self.equalInOut else self.convShortcut(x), out)
+
+
+class NetworkBlock(nn.Module):
+    """Layer container for Wide ResNet."""
+    
+    def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropout_rate=0.0):
+        super(NetworkBlock, self).__init__()
+        self.layer = self._make_layer(block, in_planes, out_planes, nb_layers, stride, dropout_rate)
+
+    def _make_layer(self, block, in_planes, out_planes, nb_layers, stride, dropout_rate):
+        layers = []
+        for i in range(int(nb_layers)):
+            layers.append(block(i == 0 and in_planes or out_planes, out_planes,
+                              i == 0 and stride or 1, dropout_rate))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.layer(x)
 
 
 class GTSRBClassifier(nn.Module):
@@ -222,13 +241,13 @@ def get_model(dataset_name: str) -> nn.Module:
         ValueError: If dataset name is not supported
     """
     if dataset_name.lower() == "cifar100":
-        logger.info("Creating CIFAR100 classifier")
-        return CIFAR100Classifier()
+        logger.info("Using Wide ResNet-28-10 for CIFAR100")
+        return WideResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=100)
     elif dataset_name.lower() == "gtsrb":
-        logger.info("Creating GTSRB classifier")
+        logger.info("Using custom CNN for GTSRB")
         return GTSRBClassifier()
     elif dataset_name.lower() == "imagenette":
-        logger.info("Creating Imagenette classifier")
+        logger.info("Using pretrained ResNet50 for Imagenette")
         return ImagenetteClassifier()
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}")
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
