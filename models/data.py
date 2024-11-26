@@ -79,21 +79,17 @@ def cleanup_gtsrb(data_dir: str) -> None:
     """Clean up redundant GTSRB dataset files and directories."""
     import shutil
 
-    # Remove redundant directories
-    redundant_dirs = [
-        os.path.join(data_dir, "gtsrb"),
-        os.path.join(data_dir, "GTSRB"),
-    ]
-    for d in redundant_dirs:
-        if os.path.exists(d):
-            shutil.rmtree(d)
-
-    # Remove zip files
+    # Remove only zip files after dataset is loaded
     for f in os.listdir(data_dir):
         if f.endswith(".zip"):
-            os.remove(os.path.join(data_dir, f))
+            zip_path = os.path.join(data_dir, f)
+            try:
+                os.remove(zip_path)
+                logger.info(f"Removed {f}")
+            except OSError as e:
+                logger.warning(f"Could not remove {f}: {e}")
 
-    logger.info("Cleaned up GTSRB dataset directory")
+    logger.info("Cleaned up GTSRB dataset files")
 
 
 def get_dataset(
@@ -149,11 +145,15 @@ def get_dataset(
         )
     elif dataset_name.lower() == "gtsrb":
         split = "train" if train else "test"
-        dataset = datasets.GTSRB(
-            root=data_dir, split=split, download=True, transform=transform
-        )
-        # Clean up after download
-        cleanup_gtsrb(data_dir)
+        try:
+            dataset = datasets.GTSRB(
+                root=data_dir, split=split, download=True, transform=transform
+            )
+            # Only clean up zip files after dataset is loaded successfully
+            cleanup_gtsrb(data_dir)
+        except Exception as e:
+            logger.error(f"Error loading GTSRB dataset: {e}")
+            raise
     elif dataset_name.lower() == "imagenette":
         # Use existing ImageNette directory structure
         split = "train" if train else "val"
