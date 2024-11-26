@@ -2,34 +2,34 @@ import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import datasets, transforms
 import os
-from typing import Optional, Tuple
-import numpy as np
+import shutil
 import requests
 import tarfile
 from tqdm import tqdm
+from typing import Optional, Tuple
+import numpy as np
 from utils.logging import get_logger
-import shutil
 
 logger = get_logger(__name__)
 
 __all__ = ["get_dataset"]
 
 
-def download_imagenette(data_dir: str, split: str = "train"):
-    """Download and extract ImageNette dataset."""
-    # ImageNette v2-160 URLs
-    urls = {
-        "train": "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz",
-    }
-
-    if split not in urls:
-        raise ValueError(f"Invalid split: {split}")
-
-    url = urls[split]
+def setup_imagenette(data_dir: str) -> None:
+    """Set up ImageNette dataset directory structure."""
+    # ImageNette v2-160 URL
+    url = "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz"
     filename = os.path.join(data_dir, os.path.basename(url))
 
     # Create directory if it doesn't exist
     os.makedirs(data_dir, exist_ok=True)
+
+    # Check if dataset is already properly set up
+    if os.path.exists(os.path.join(data_dir, "train")) and os.path.exists(
+        os.path.join(data_dir, "val")
+    ):
+        logger.info("ImageNette dataset already set up")
+        return
 
     # Download file if it doesn't exist
     if not os.path.exists(filename):
@@ -55,19 +55,22 @@ def download_imagenette(data_dir: str, split: str = "train"):
         with tarfile.open(filename, "r:gz") as tar:
             tar.extractall(path=data_dir)
 
-    # Set up train and val directories
-    train_dir = os.path.join(data_dir, "train")
-    val_dir = os.path.join(data_dir, "val")
+    # Move directories to correct location
+    train_src = os.path.join(src_dir, "train")
+    val_src = os.path.join(src_dir, "val")
+    train_dst = os.path.join(data_dir, "train")
+    val_dst = os.path.join(data_dir, "val")
 
-    # Remove existing directories if they exist
-    if os.path.exists(train_dir):
-        shutil.rmtree(train_dir)
-    if os.path.exists(val_dir):
-        shutil.rmtree(val_dir)
+    if not os.path.exists(train_dst):
+        shutil.move(train_src, train_dst)
+    if not os.path.exists(val_dst):
+        shutil.move(val_src, val_dst)
 
-    # Copy directories instead of using symlinks
-    shutil.copytree(os.path.join(src_dir, "train"), train_dir)
-    shutil.copytree(os.path.join(src_dir, "val"), val_dir)
+    # Clean up
+    if os.path.exists(src_dir):
+        shutil.rmtree(src_dir)
+    if os.path.exists(filename):
+        os.remove(filename)
 
     logger.info("ImageNette dataset setup complete")
 
@@ -99,7 +102,7 @@ def get_dataset(
         )
 
     # Get dataset root directory
-    data_dir = os.path.join("data", dataset_name)
+    data_dir = os.path.join("data", dataset_name.lower())
     os.makedirs(data_dir, exist_ok=True)
 
     # Load appropriate dataset
@@ -113,8 +116,8 @@ def get_dataset(
             root=data_dir, split=split, download=True, transform=transform
         )
     elif dataset_name.lower() == "imagenette":
-        # Download ImageNette dataset
-        download_imagenette(data_dir)
+        # Set up ImageNette dataset
+        setup_imagenette(data_dir)
         split = "train" if train else "val"
         split_dir = os.path.join(data_dir, split)
         dataset = datasets.ImageFolder(root=split_dir, transform=transform)
