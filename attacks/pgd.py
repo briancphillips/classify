@@ -8,7 +8,7 @@ import numpy as np
 import random
 import copy
 from tqdm import tqdm
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult
@@ -35,6 +35,19 @@ class PGDPoisonAttack(PoisonAttack):
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
         logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
+
+        # Store original labels for accuracy evaluation
+        original_labels = []
+        if isinstance(dataset, torch.utils.data.dataset.Subset):
+            base_dataset = dataset.dataset
+            if isinstance(base_dataset, datasets.CIFAR100):
+                original_labels = [base_dataset.targets[i] for i in dataset.indices]
+            elif isinstance(base_dataset, datasets.GTSRB):
+                original_labels = [base_dataset._samples[i][1] for i in dataset.indices]
+            elif isinstance(base_dataset, datasets.ImageFolder):
+                original_labels = [base_dataset.targets[i] for i in dataset.indices]
+        else:
+            original_labels = [dataset[i][1] for i in range(num_samples)]
 
         # Create a new dataset with the same transforms
         poisoned_dataset = copy.deepcopy(dataset)
@@ -128,9 +141,6 @@ class PGDPoisonAttack(PoisonAttack):
                         base_dataset.cache[img_path] = transforms.ToPILImage()(
                             perturbed_img
                         )
-            else:
-                logger.warning(f"Unsupported dataset type: {type(poisoned_dataset)}")
-                continue
 
         # Create result object
         result = PoisonResult(self.config)
@@ -154,9 +164,11 @@ class PGDPoisonAttack(PoisonAttack):
             persistent_workers=False,
         )
 
-        # Evaluate model on clean and poisoned data
+        # Evaluate model on clean and poisoned data using original labels
         result.original_accuracy = self._evaluate_model(clean_loader)
-        result.poisoned_accuracy = self._evaluate_model(poisoned_loader)
+        result.poisoned_accuracy = self._evaluate_model_with_original_labels(
+            poisoned_loader, original_labels
+        )
 
         # Calculate attack success rate
         success_count = 0
@@ -170,7 +182,7 @@ class PGDPoisonAttack(PoisonAttack):
                 img = img.unsqueeze(0).to(self.device)
                 output = self.model(img)
                 pred = output.argmax(1).item()
-                if pred != dataset[idx][1]:  # Different from original label
+                if pred != original_labels[idx]:  # Compare with original label
                     success_count += 1
                 total_poison += 1
 
@@ -277,5 +289,31 @@ class PGDPoisonAttack(PoisonAttack):
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
+
+        return 100.0 * correct / total
+
+    def _evaluate_model_with_original_labels(
+        self, dataloader: DataLoader, original_labels: List[int]
+    ) -> float:
+        """Evaluate model accuracy using original labels."""
+        self.model.eval()
+        correct = 0
+        total = 0
+        idx = 0
+
+        with torch.no_grad():
+            for inputs, _ in dataloader:
+                inputs = move_to_device(inputs, self.device)
+                outputs = self.model(inputs)
+                _, predicted = outputs.max(1)
+
+                # Get batch size number of original labels
+                batch_size = inputs.size(0)
+                batch_labels = original_labels[idx : idx + batch_size]
+                batch_labels = torch.tensor(batch_labels, device=self.device)
+
+                total += batch_size
+                correct += predicted.eq(batch_labels).sum().item()
+                idx += batch_size
 
         return 100.0 * correct / total
