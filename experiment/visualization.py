@@ -285,7 +285,10 @@ def plot_poisoned_classifier_comparison(
             # Get accuracy for this attack type (if available)
             attack_key = attack.lower().replace(" ", "_")
             if attack_key in results[dataset]:
-                accuracies.append(results[dataset][attack_key]["poisoned_accuracy"])
+                # Convert percentage to fraction
+                accuracies.append(
+                    results[dataset][attack_key]["poisoned_accuracy"] / 100.0
+                )
             else:
                 accuracies.append(0)  # Default if attack not present
 
@@ -315,3 +318,116 @@ def plot_poisoned_classifier_comparison(
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
     logger.info(f"Saved poisoned comparison plot to {plot_path}")
+
+
+def plot_clean_vs_poisoned(
+    results: Dict[str, Dict[str, Dict[str, float]]], output_dir: str
+) -> None:
+    """Plot clean vs poisoned accuracy comparison for each dataset.
+
+    Args:
+        results: Dictionary with format {dataset: {attack: {metric: value}}}
+        output_dir: Directory to save plot
+    """
+    # Create a subplot for each dataset
+    datasets = list(results.keys())
+    fig, axes = plt.subplots(1, len(datasets), figsize=(15, 6))
+    plt.style.use("seaborn-v0_8-darkgrid")
+
+    for idx, dataset in enumerate(datasets):
+        ax = axes[idx]
+        attacks = ["PGD", "GA", "Label Flip"]
+        x = np.arange(len(attacks))
+        width = 0.35
+
+        clean_acc = []
+        poisoned_acc = []
+        for attack in attacks:
+            attack_key = attack.lower().replace(" ", "_")
+            if attack_key in results[dataset]:
+                # Convert percentages to fractions
+                clean_acc.append(
+                    results[dataset][attack_key]["original_accuracy"] / 100.0
+                )
+                poisoned_acc.append(
+                    results[dataset][attack_key]["poisoned_accuracy"] / 100.0
+                )
+            else:
+                clean_acc.append(0)
+                poisoned_acc.append(0)
+
+        # Plot bars
+        ax.bar(x - width / 2, clean_acc, width, label="Clean", color="#2ecc71")
+        ax.bar(x + width / 2, poisoned_acc, width, label="Poisoned", color="#e74c3c")
+
+        # Customize subplot
+        ax.set_title(dataset.upper())
+        ax.set_xticks(x)
+        ax.set_xticklabels(attacks, rotation=45)
+        ax.set_ylim(0, 1.0)
+        if idx == 0:
+            ax.set_ylabel("Accuracy")
+            ax.legend()
+
+    plt.tight_layout()
+    plot_path = os.path.join(
+        output_dir, f"clean_vs_poisoned_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    )
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved clean vs poisoned comparison plot to {plot_path}")
+
+
+def plot_per_dataset_performance(
+    results: Dict[str, Dict[str, Dict[str, float]]], output_dir: str
+) -> None:
+    """Plot detailed performance metrics for each dataset.
+
+    Args:
+        results: Dictionary with format {dataset: {attack: {metric: value}}}
+        output_dir: Directory to save plot
+    """
+    datasets = list(results.keys())
+    metrics = ["original_accuracy", "poisoned_accuracy", "poison_success_rate"]
+    metric_names = ["Clean Accuracy", "Poisoned Accuracy", "Attack Success"]
+
+    for dataset in datasets:
+        plt.figure(figsize=(10, 6))
+        plt.style.use("seaborn-v0_8-darkgrid")
+
+        attacks = ["PGD", "GA", "Label Flip"]
+        x = np.arange(len(attacks))
+        width = 0.25
+        colors = ["#2ecc71", "#e74c3c", "#3498db"]
+
+        for i, (metric, name, color) in enumerate(zip(metrics, metric_names, colors)):
+            values = []
+            for attack in attacks:
+                attack_key = attack.lower().replace(" ", "_")
+                if attack_key in results[dataset]:
+                    # Convert percentages to fractions for accuracies
+                    value = results[dataset][attack_key][metric]
+                    if metric != "poison_success_rate":  # Don't convert success rate
+                        value = value / 100.0
+                    values.append(value)
+                else:
+                    values.append(0)
+
+            plt.bar(x + (i - 1) * width, values, width, label=name, color=color)
+
+        plt.title(f"{dataset.upper()} Performance Metrics")
+        plt.xlabel("Attack Type")
+        plt.ylabel("Score")
+        plt.ylim(0, 1.0)
+        plt.xticks(x, attacks)
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plot_path = os.path.join(
+            output_dir,
+            f"{dataset}_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+        )
+        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Saved {dataset} performance plot to {plot_path}")

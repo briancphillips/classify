@@ -1,6 +1,10 @@
 import json
 import os
-from experiment.visualization import plot_poisoned_classifier_comparison
+from experiment.visualization import (
+    plot_poisoned_classifier_comparison,
+    plot_clean_vs_poisoned,
+    plot_per_dataset_performance,
+)
 
 
 def collect_poisoned_results():
@@ -82,5 +86,7 @@ with open("results/poisoned_results.json", "w") as f:
 print("\nCollected results:")
 print(json.dumps(results, indent=2))
 
-# Generate plot
+# Generate all plots
 plot_poisoned_classifier_comparison(results, "results")
+plot_clean_vs_poisoned(results, "results")
+plot_per_dataset_performance(results, "results")
