@@ -4,6 +4,10 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from tqdm import tqdm
 from typing import Tuple, Optional
+import copy
+from PIL import Image
+from torchvision import transforms
+from torchvision import datasets
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult
@@ -49,15 +53,29 @@ class GradientAscentAttack(PoisonAttack):
         num_poison = int(len(dataset) * self.config.poison_ratio)
         indices = np.random.choice(len(dataset), num_poison, replace=False)
 
-        # Convert dataset to tensor format if needed
-        if hasattr(dataset, "data") and not isinstance(dataset.data, torch.Tensor):
-            data = torch.tensor(dataset.data).float()
-            if len(data.shape) == 3:
-                data = data.unsqueeze(1)
-            if data.shape[-3] == 3:
-                data = data.permute(0, 3, 1, 2)
+        # Create a copy of the dataset
+        poisoned_dataset = copy.deepcopy(dataset)
+
+        # Convert dataset to tensor format
+        if isinstance(dataset, datasets.ImageFolder):
+            # For ImageFolder datasets, load all images into memory
+            all_data = []
+            for img_path, _ in dataset.samples:
+                img = transforms.ToTensor()(Image.open(img_path).convert("RGB"))
+                all_data.append(img)
+            data = torch.stack(all_data)
+        elif hasattr(dataset, "data"):
+            # For datasets with .data attribute (e.g., CIFAR100)
+            if not isinstance(dataset.data, torch.Tensor):
+                data = torch.tensor(dataset.data).float()
+                if len(data.shape) == 3:
+                    data = data.unsqueeze(1)
+                if data.shape[-3] == 3:
+                    data = data.permute(0, 3, 1, 2)
+            else:
+                data = dataset.data.clone()
         else:
-            data = dataset.data.clone()
+            raise ValueError(f"Unsupported dataset type: {type(dataset)}")
 
         # Normalize data to [0, 1] if needed
         if data.max() > 1:
@@ -91,23 +109,42 @@ class GradientAscentAttack(PoisonAttack):
 
             poisoned_data[idx] = x
 
-        # Update dataset
-        if hasattr(dataset, "data"):
+        # Update dataset based on its type
+        if isinstance(poisoned_dataset, datasets.ImageFolder):
+            # For ImageFolder datasets, save perturbed images back to files
+            for idx in indices:
+                img_path = poisoned_dataset.samples[idx][0]
+                perturbed_img = transforms.ToPILImage()(poisoned_data[idx].cpu())
+                perturbed_img.save(img_path)
+        elif hasattr(poisoned_dataset, "data"):
+            # For datasets with .data attribute
             if isinstance(dataset.data, np.ndarray):
                 poisoned_data = (poisoned_data.cpu().numpy() * 255).astype(np.uint8)
-            dataset.data = (
+            poisoned_dataset.data = (
                 poisoned_data.cpu()
                 if isinstance(poisoned_data, torch.Tensor)
                 else poisoned_data
             )
 
         # Create data loaders for evaluation
-        clean_loader = DataLoader(dataset, batch_size=128, shuffle=False)
+        clean_loader = DataLoader(
+            dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            persistent_workers=False,
+        )
         poisoned_loader = DataLoader(
-            dataset, batch_size=128, shuffle=False
-        )  # Using updated dataset
+            poisoned_dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            persistent_workers=False,
+        )
 
-        # Evaluate model on clean and poisoned data
+        # Evaluate attack effectiveness
         result.original_accuracy = self._evaluate_model(clean_loader)
         result.poisoned_accuracy = self._evaluate_model(poisoned_loader)
 
@@ -117,7 +154,10 @@ class GradientAscentAttack(PoisonAttack):
         self.model.eval()
         with torch.no_grad():
             for idx in indices:
-                img = poisoned_data[idx : idx + 1].to(self.device)
+                img, _ = poisoned_dataset[idx]
+                if not isinstance(img, torch.Tensor):
+                    img = transforms.ToTensor()(img)
+                img = img.unsqueeze(0).to(self.device)
                 output = self.model(img)
                 pred = output.argmax(1).item()
                 if pred != dataset[idx][1]:  # Different from original label
@@ -127,13 +167,11 @@ class GradientAscentAttack(PoisonAttack):
         result.poison_success_rate = (
             100.0 * success_count / total_poison if total_poison > 0 else 0.0
         )
-        result.poisoned_indices = indices.tolist()
-
         logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
         logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
         logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
 
-        return dataset, result
+        return poisoned_dataset, result
 
     def _evaluate_model(self, dataloader: DataLoader) -> float:
         """Evaluate model accuracy"""
