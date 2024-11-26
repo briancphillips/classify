@@ -18,7 +18,7 @@ def train_model(
     val_loader: Optional[DataLoader] = None,
     epochs: int = 100,
     device: Optional[torch.device] = None,
-    early_stopping_patience: int = 10,
+    early_stopping_patience: int = 25,
     gradient_clip_val: float = 1.0,
     learning_rate: float = 0.001,
     checkpoint_dir: Optional[str] = None,
@@ -48,7 +48,9 @@ def train_model(
 
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=10, verbose=True
+    )
 
     start_epoch = 0
     best_val_loss = float("inf")
