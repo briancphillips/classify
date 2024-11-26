@@ -104,6 +104,30 @@ class PGDPoisonAttack(PoisonAttack):
                     (perturbed_img.permute(1, 2, 0) * 255).numpy().astype(np.uint8)
                 )
                 poisoned_dataset.targets[idx] = label
+            elif isinstance(poisoned_dataset, torch.utils.data.dataset.Subset):
+                # For Subset datasets, modify the underlying dataset
+                base_dataset = poisoned_dataset.dataset
+                base_idx = poisoned_dataset.indices[idx]
+
+                if isinstance(base_dataset, datasets.CIFAR100):
+                    base_dataset.data[base_idx] = (
+                        (perturbed_img.permute(1, 2, 0) * 255).numpy().astype(np.uint8)
+                    )
+                    base_dataset.targets[base_idx] = label
+                elif isinstance(base_dataset, datasets.GTSRB):
+                    if hasattr(base_dataset, "_samples"):
+                        img_path, target = base_dataset._samples[base_idx]
+                        perturbed_pil = transforms.ToPILImage()(perturbed_img)
+                        perturbed_pil.save(img_path)
+                        base_dataset._samples[base_idx] = (img_path, target)
+                elif isinstance(base_dataset, datasets.ImageFolder):
+                    img_path = base_dataset.imgs[base_idx][0]
+                    base_dataset.imgs[base_idx] = (img_path, label)
+                    base_dataset.samples[base_idx] = (img_path, label)
+                    if hasattr(base_dataset, "cache"):
+                        base_dataset.cache[img_path] = transforms.ToPILImage()(
+                            perturbed_img
+                        )
             else:
                 logger.warning(f"Unsupported dataset type: {type(poisoned_dataset)}")
                 continue

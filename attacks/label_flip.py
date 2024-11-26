@@ -20,6 +20,10 @@ class LabelFlipAttack(PoisonAttack):
         self, dataset: Dataset, model: nn.Module
     ) -> Tuple[Dataset, PoisonResult]:
         """Poison a dataset by flipping labels according to the specified strategy."""
+        # Store model for evaluation
+        self.model = model.to(self.device)
+        self.model.eval()
+
         result = PoisonResult(self.config)
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)

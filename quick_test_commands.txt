@@ -1,0 +1,22 @@
+# Quick test commands with minimal settings for Jupyter notebook
+# Each command uses minimal settings for fast testing:
+# - 2 epochs, batch size 32, 10 samples/class, 0 workers, 5% poison
+
+# CIFAR100 Tests
+!python poison.py --dataset cifar100 --attack pgd --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset cifar100 --attack ga --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset cifar100 --attack label_flip --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+
+# GTSRB Tests
+!python poison.py --dataset gtsrb --attack pgd --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset gtsrb --attack ga --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset gtsrb --attack label_flip --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+
+# Imagenette Tests
+!python poison.py --dataset imagenette --attack pgd --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset imagenette --attack ga --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+!python poison.py --dataset imagenette --attack label_flip --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05; \
+
+# Label Flip Variants (CIFAR100)
+!python poison.py --dataset cifar100 --attack label_flip --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05 --target-class 0; \
+!python poison.py --dataset cifar100 --attack label_flip --epochs 2 --batch-size 32 --subset-size 10 --num-workers 0 --poison-ratio 0.05 --source-class 1 --target-class 0
