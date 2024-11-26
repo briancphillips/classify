@@ -4,11 +4,64 @@ from torchvision import datasets, transforms
 import os
 from typing import Optional, Tuple
 import numpy as np
+import requests
+import tarfile
+from tqdm import tqdm
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 __all__ = ["get_dataset"]
+
+
+def download_imagenette(data_dir: str, split: str = "train"):
+    """Download and extract ImageNette dataset."""
+    # ImageNette v2-160 URLs
+    urls = {
+        "train": "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz",
+    }
+
+    if split not in urls:
+        raise ValueError(f"Invalid split: {split}")
+
+    url = urls[split]
+    filename = os.path.join(data_dir, os.path.basename(url))
+
+    # Create directory if it doesn't exist
+    os.makedirs(data_dir, exist_ok=True)
+
+    # Download file if it doesn't exist
+    if not os.path.exists(filename):
+        logger.info(f"Downloading ImageNette dataset to {filename}")
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get("content-length", 0))
+
+        with open(filename, "wb") as f, tqdm(
+            desc=f"Downloading ImageNette",
+            total=total_size,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as pbar:
+            for data in response.iter_content(chunk_size=1024):
+                size = f.write(data)
+                pbar.update(size)
+
+    # Extract file if needed
+    if not os.path.exists(os.path.join(data_dir, "imagenette2-160")):
+        logger.info(f"Extracting {filename}")
+        with tarfile.open(filename, "r:gz") as tar:
+            tar.extractall(path=data_dir)
+
+    # Create train/val symlinks
+    src_dir = os.path.join(data_dir, "imagenette2-160")
+    train_dir = os.path.join(data_dir, "train")
+    val_dir = os.path.join(data_dir, "val")
+
+    if not os.path.exists(train_dir):
+        os.symlink(os.path.join(src_dir, "train"), train_dir)
+    if not os.path.exists(val_dir):
+        os.symlink(os.path.join(src_dir, "val"), val_dir)
 
 
 def get_dataset(
@@ -52,10 +105,11 @@ def get_dataset(
             root=data_dir, split=split, download=True, transform=transform
         )
     elif dataset_name.lower() == "imagenette":
+        # Download ImageNette dataset
+        download_imagenette(data_dir)
         split = "train" if train else "val"
-        dataset = datasets.ImageFolder(
-            root=os.path.join(data_dir, split), transform=transform
-        )
+        split_dir = os.path.join(data_dir, split)
+        dataset = datasets.ImageFolder(root=split_dir, transform=transform)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 

@@ -72,6 +72,40 @@ class GradientAscentAttack(PoisonAttack):
                 img_tensor = transform(img)
                 all_data.append(img_tensor)
             data = torch.stack(all_data)
+        elif isinstance(dataset, torch.utils.data.dataset.Subset):
+            # For Subset datasets, get data from the underlying dataset
+            base_dataset = dataset.dataset
+            if isinstance(base_dataset, datasets.CIFAR100):
+                data = torch.tensor(base_dataset.data[dataset.indices]).float()
+                if len(data.shape) == 3:
+                    data = data.unsqueeze(1)
+                if data.shape[-3] == 3:
+                    data = data.permute(0, 3, 1, 2)
+            elif isinstance(base_dataset, datasets.GTSRB):
+                all_data = []
+                for idx in dataset.indices:
+                    img_path, _ = base_dataset._samples[idx]
+                    img = Image.open(img_path).convert("RGB")
+                    img_tensor = transforms.ToTensor()(img)
+                    all_data.append(img_tensor)
+                data = torch.stack(all_data)
+            elif isinstance(base_dataset, datasets.ImageFolder):
+                all_data = []
+                target_size = (224, 224)  # Standard ImageNet size
+                transform = transforms.Compose(
+                    [
+                        transforms.Resize(target_size),
+                        transforms.ToTensor(),
+                    ]
+                )
+                for idx in dataset.indices:
+                    img_path, _ = base_dataset.samples[idx]
+                    img = Image.open(img_path).convert("RGB")
+                    img_tensor = transform(img)
+                    all_data.append(img_tensor)
+                data = torch.stack(all_data)
+            else:
+                raise ValueError(f"Unsupported base dataset type: {type(base_dataset)}")
         elif hasattr(dataset, "data"):
             # For datasets with .data attribute (e.g., CIFAR100)
             if not isinstance(dataset.data, torch.Tensor):
@@ -130,6 +164,33 @@ class GradientAscentAttack(PoisonAttack):
                         original_img.size, Image.BILINEAR
                     )
                 perturbed_img.save(img_path)
+        elif isinstance(poisoned_dataset, torch.utils.data.dataset.Subset):
+            # For Subset datasets, update the underlying dataset
+            base_dataset = poisoned_dataset.dataset
+            for i, idx in enumerate(indices):
+                base_idx = poisoned_dataset.indices[idx]
+                if isinstance(base_dataset, datasets.CIFAR100):
+                    base_dataset.data[base_idx] = (
+                        (poisoned_data[i].permute(1, 2, 0) * 255)
+                        .cpu()
+                        .numpy()
+                        .astype(np.uint8)
+                    )
+                elif isinstance(base_dataset, datasets.GTSRB):
+                    if hasattr(base_dataset, "_samples"):
+                        img_path, target = base_dataset._samples[base_idx]
+                        perturbed_img = transforms.ToPILImage()(poisoned_data[i].cpu())
+                        perturbed_img.save(img_path)
+                elif isinstance(base_dataset, datasets.ImageFolder):
+                    img_path = base_dataset.samples[base_idx][0]
+                    perturbed_img = transforms.ToPILImage()(poisoned_data[i].cpu())
+                    # Resize back to original size if needed
+                    original_img = Image.open(img_path)
+                    if perturbed_img.size != original_img.size:
+                        perturbed_img = perturbed_img.resize(
+                            original_img.size, Image.BILINEAR
+                        )
+                    perturbed_img.save(img_path)
         elif hasattr(poisoned_dataset, "data"):
             # For datasets with .data attribute
             if isinstance(dataset.data, np.ndarray):

@@ -29,7 +29,19 @@ class LabelFlipAttack(PoisonAttack):
         num_poison = int(num_samples * self.config.poison_ratio)
 
         # Get all labels
-        all_labels = [dataset[i][1] for i in range(num_samples)]
+        if isinstance(dataset, torch.utils.data.dataset.Subset):
+            base_dataset = dataset.dataset
+            if isinstance(base_dataset, datasets.CIFAR100):
+                all_labels = [base_dataset.targets[i] for i in dataset.indices]
+            elif isinstance(base_dataset, datasets.GTSRB):
+                all_labels = [base_dataset._samples[i][1] for i in dataset.indices]
+            elif isinstance(base_dataset, datasets.ImageFolder):
+                all_labels = [base_dataset.targets[i] for i in dataset.indices]
+            else:
+                raise ValueError(f"Unsupported base dataset type: {type(base_dataset)}")
+        else:
+            all_labels = [dataset[i][1] for i in range(num_samples)]
+
         unique_labels = list(set(all_labels))
 
         # Select indices to poison based on attack type
@@ -45,22 +57,137 @@ class LabelFlipAttack(PoisonAttack):
             raise ValueError(f"Unsupported label flip type: {self.config.poison_type}")
 
         # Apply label flips
-        for idx in indices:
-            if hasattr(dataset, "targets"):
-                if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
-                    current_label = dataset.targets[idx]
-                    new_label = np.random.choice(
-                        [l for l in unique_labels if l != current_label]
-                    )
-                    dataset.targets[idx] = new_label
-                elif self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET:
-                    dataset.targets[idx] = self.config.target_class
-                elif self.config.poison_type == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET:
-                    dataset.targets[idx] = self.config.target_class
+        if isinstance(dataset, torch.utils.data.dataset.Subset):
+            base_dataset = dataset.dataset
+            for idx in indices:
+                base_idx = dataset.indices[idx]
+                if isinstance(base_dataset, datasets.CIFAR100):
+                    if (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
+                    ):
+                        current_label = base_dataset.targets[base_idx]
+                        new_label = np.random.choice(
+                            [l for l in unique_labels if l != current_label]
+                        )
+                        base_dataset.targets[base_idx] = new_label
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
+                    ):
+                        base_dataset.targets[base_idx] = self.config.target_class
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
+                    ):
+                        base_dataset.targets[base_idx] = self.config.target_class
+                elif isinstance(base_dataset, datasets.GTSRB):
+                    if hasattr(base_dataset, "_samples"):
+                        img_path, _ = base_dataset._samples[base_idx]
+                        if (
+                            self.config.poison_type
+                            == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
+                        ):
+                            current_label = base_dataset._samples[base_idx][1]
+                            new_label = np.random.choice(
+                                [l for l in unique_labels if l != current_label]
+                            )
+                            base_dataset._samples[base_idx] = (img_path, new_label)
+                        elif (
+                            self.config.poison_type
+                            == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
+                        ):
+                            base_dataset._samples[base_idx] = (
+                                img_path,
+                                self.config.target_class,
+                            )
+                        elif (
+                            self.config.poison_type
+                            == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
+                        ):
+                            base_dataset._samples[base_idx] = (
+                                img_path,
+                                self.config.target_class,
+                            )
+                elif isinstance(base_dataset, datasets.ImageFolder):
+                    img_path = base_dataset.samples[base_idx][0]
+                    if (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
+                    ):
+                        current_label = base_dataset.targets[base_idx]
+                        new_label = np.random.choice(
+                            [l for l in unique_labels if l != current_label]
+                        )
+                        base_dataset.targets[base_idx] = new_label
+                        base_dataset.samples[base_idx] = (img_path, new_label)
+                        base_dataset.imgs[base_idx] = (img_path, new_label)
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
+                    ):
+                        base_dataset.targets[base_idx] = self.config.target_class
+                        base_dataset.samples[base_idx] = (
+                            img_path,
+                            self.config.target_class,
+                        )
+                        base_dataset.imgs[base_idx] = (
+                            img_path,
+                            self.config.target_class,
+                        )
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
+                    ):
+                        base_dataset.targets[base_idx] = self.config.target_class
+                        base_dataset.samples[base_idx] = (
+                            img_path,
+                            self.config.target_class,
+                        )
+                        base_dataset.imgs[base_idx] = (
+                            img_path,
+                            self.config.target_class,
+                        )
+        else:
+            for idx in indices:
+                if hasattr(dataset, "targets"):
+                    if (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
+                    ):
+                        current_label = dataset.targets[idx]
+                        new_label = np.random.choice(
+                            [l for l in unique_labels if l != current_label]
+                        )
+                        dataset.targets[idx] = new_label
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
+                    ):
+                        dataset.targets[idx] = self.config.target_class
+                    elif (
+                        self.config.poison_type
+                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
+                    ):
+                        dataset.targets[idx] = self.config.target_class
 
         # Create data loaders for evaluation
-        clean_loader = DataLoader(dataset, batch_size=128, shuffle=False)
-        poisoned_loader = DataLoader(dataset, batch_size=128, shuffle=False)
+        clean_loader = DataLoader(
+            dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            persistent_workers=False,
+        )
+        poisoned_loader = DataLoader(
+            dataset,
+            batch_size=128,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True,
+            persistent_workers=False,
+        )
 
         # Evaluate model on clean and poisoned data
         result.original_accuracy = self._evaluate_model(clean_loader)
@@ -74,7 +201,7 @@ class LabelFlipAttack(PoisonAttack):
             for idx in indices:
                 img, _ = dataset[idx]
                 if not isinstance(img, torch.Tensor):
-                    img = torch.tensor(img).float()
+                    img = transforms.ToTensor()(img)
                     if len(img.shape) == 3:
                         img = img.unsqueeze(0)
                 img = img.to(self.device)
@@ -163,6 +290,12 @@ class LabelFlipAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, targets in dataloader:
+                # Convert inputs to proper tensor format if needed
+                if not isinstance(inputs, torch.Tensor):
+                    inputs = transforms.ToTensor()(inputs)
+                if len(inputs.shape) == 3:
+                    inputs = inputs.unsqueeze(0)
+
                 inputs, targets = move_to_device(inputs, self.device), move_to_device(
                     targets, self.device
                 )
