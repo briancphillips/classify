@@ -61,11 +61,12 @@ def train_model(
     patience_counter = 0
     history = {"train_loss": [], "val_loss": []}
     last_epoch = 0
+    should_stop = False
 
     # Try to load checkpoint if resuming
     if resume_training and checkpoint_dir and checkpoint_name:
         try:
-            epoch, _, early_stopping_state = load_checkpoint(
+            epoch, last_loss, early_stopping_state = load_checkpoint(
                 model,
                 checkpoint_dir,
                 checkpoint_name,
@@ -79,8 +80,18 @@ def train_model(
                 best_val_loss = early_stopping_state["best_val_loss"]
                 start_epoch = epoch + 1  # Start from next epoch
                 last_epoch = epoch
+
+                # Check if we should stop immediately
+                if patience_counter >= early_stopping_patience:
+                    logger.info(
+                        f"Early stopping condition already met (patience={patience_counter}, best_val_loss={best_val_loss:.4f}). "
+                        "Not resuming training."
+                    )
+                    return last_epoch + 1, best_val_loss
+
                 logger.info(
-                    f"Resumed training from epoch {start_epoch} with best val loss: {best_val_loss:.4f}"
+                    f"Resumed training from epoch {start_epoch} "
+                    f"(patience={patience_counter}, best_val_loss={best_val_loss:.4f})"
                 )
         except Exception as e:
             logger.warning(f"Failed to load checkpoint: {str(e)}")
@@ -168,7 +179,8 @@ def train_model(
 
                 if patience_counter >= early_stopping_patience:
                     logger.info(
-                        f"Early stopping triggered at epoch {epoch+1} (best val loss: {best_val_loss:.4f})"
+                        f"Early stopping triggered at epoch {epoch+1} "
+                        f"(patience={patience_counter}, best_val_loss={best_val_loss:.4f})"
                     )
                     break
 
@@ -176,7 +188,8 @@ def train_model(
                     f"Epoch {epoch+1}/{epochs} - "
                     f"Train Loss: {train_loss:.4f} - "
                     f"Val Loss: {val_loss:.4f} - "
-                    f"Best Val Loss: {best_val_loss:.4f}"
+                    f"Best Val Loss: {best_val_loss:.4f} - "
+                    f"Patience: {patience_counter}"
                 )
             else:
                 logger.info(
