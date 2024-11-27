@@ -140,7 +140,7 @@ def main():
     # Get device
     device = get_device()
     logger.info(f"Using device: {device}")
-    use_amp = device.type in ['cuda', 'mps']  # Enable AMP for both CUDA and MPS
+    use_amp = device.type == 'cuda'  # Only enable AMP for CUDA
     
     # Create output directory
     output_dir = "cifar100_enhanced_results"
@@ -239,18 +239,18 @@ def main():
             progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch_idx, (inputs, targets) in enumerate(progress_bar):
                 inputs, targets = inputs.to(device), targets.to(device)
-                
-                # Mixup
-                if random.random() < 0.5:
-                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha, device)
-                    
                 optimizer.zero_grad()
+                
+                # Apply mixup with 50% probability
+                do_mixup = random.random() < 0.5
+                if do_mixup:
+                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha, device)
                 
                 if use_amp:
                     # Mixed precision training
-                    with autocast():
+                    with autocast(device_type='cuda'):
                         outputs = model(inputs)
-                        if random.random() < 0.5:  # Mixup was applied
+                        if do_mixup:
                             loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
                         else:
                             loss = criterion(outputs, targets)
@@ -263,7 +263,7 @@ def main():
                 else:
                     # Regular training
                     outputs = model(inputs)
-                    if random.random() < 0.5:  # Mixup was applied
+                    if do_mixup:
                         loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
                     else:
                         loss = criterion(outputs, targets)
@@ -275,7 +275,8 @@ def main():
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
-                if random.random() < 0.5:  # Mixup was applied
+                
+                if do_mixup:
                     correct += (lam * predicted.eq(targets_a).sum().float()
                               + (1 - lam) * predicted.eq(targets_b).sum().float())
                 else:
