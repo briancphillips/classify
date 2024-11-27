@@ -12,92 +12,62 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def plot_results(results: List[PoisonResult], output_dir: str) -> None:
-    """Plot experiment results.
-
-    Args:
-        results: List of experiment results
-        output_dir: Directory to save plots
-    """
-    # Prepare data for plotting
+def plot_results(results, output_dir):
+    """Plot results from poisoning experiments."""
+    # Convert results to pandas DataFrame
     data = []
     for result in results:
-        data.append(
-            {
-                "Attack": result.config.poison_type.value,
-                "Metric": "Original Accuracy",
-                "Value": result.original_accuracy,
-                "Poison Ratio": result.config.poison_ratio,
+        # Handle both PoisonResult objects and dictionaries (from traditional classifiers)
+        if isinstance(result, dict):
+            row = {
+                "Dataset": result.get('dataset_name', ''),
+                "Attack": result['config']['poison_type'],
+                "Model": result.get('model_architecture', 'Traditional'),  # Default to 'Traditional' for traditional classifiers
+                "Accuracy": result['metrics']['accuracy'] * 100,
+                "Training Time": result['metrics'].get('training_time', 0),
+                "Inference Time": result['metrics'].get('inference_time', 0),
             }
-        )
-        data.append(
-            {
+        else:
+            # For PoisonResult objects, use the original_accuracy as the accuracy metric
+            row = {
+                "Dataset": result.dataset_name,
                 "Attack": result.config.poison_type.value,
-                "Metric": "Poisoned Accuracy",
-                "Value": result.poisoned_accuracy,
-                "Poison Ratio": result.config.poison_ratio,
+                "Model": "Neural Network",  # Default to 'Neural Network' for PoisonResult
+                "Accuracy": result.original_accuracy * 100,
+                "Training Time": result.metrics.get('training_time', 0) if hasattr(result, 'metrics') else 0,
+                "Inference Time": result.metrics.get('inference_time', 0) if hasattr(result, 'metrics') else 0,
             }
-        )
-        data.append(
-            {
-                "Attack": result.config.poison_type.value,
-                "Metric": "Attack Success Rate",
-                "Value": result.poison_success_rate,
-                "Poison Ratio": result.config.poison_ratio,
-            }
-        )
+        data.append(row)
 
     df = pd.DataFrame(data)
 
-    # Create accuracy comparison plot
+    # Plot accuracy comparison
     plt.figure(figsize=(12, 6))
-    sns.barplot(
-        data=df[df["Metric"].isin(["Original Accuracy", "Poisoned Accuracy"])],
-        x="Attack",
-        y="Value",
-        hue="Metric",
-    )
-    plt.title("Model Accuracy Comparison")
-    plt.ylabel("Accuracy (%)")
+    sns.barplot(data=df, x="Model", y="Accuracy", hue="Attack")
+    plt.title("Model Accuracy by Attack Type")
     plt.xticks(rotation=45)
     plt.tight_layout()
-
-    # Save plot
-    plot_path = os.path.join(
-        output_dir,
-        f"accuracy_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-    )
-    plt.savefig(plot_path)
+    plt.savefig(os.path.join(output_dir, "accuracy_comparison.png"))
     plt.close()
-    logger.info(f"Saved accuracy comparison plot to {plot_path}")
 
-    # Create attack success rate plot
-    plt.figure(figsize=(10, 6))
-    sns.barplot(
-        data=df[df["Metric"] == "Attack Success Rate"],
-        x="Attack",
-        y="Value",
-        hue="Poison Ratio",
-    )
-    plt.title("Attack Success Rate Comparison")
-    plt.ylabel("Success Rate (%)")
+    # Plot timing comparison
+    plt.figure(figsize=(12, 6))
+    timing_df = df.melt(id_vars=['Model', 'Attack'], 
+                       value_vars=['Training Time', 'Inference Time'],
+                       var_name='Metric', value_name='Time (seconds)')
+    sns.barplot(data=timing_df, x="Model", y="Time (seconds)", hue="Metric")
+    plt.title("Model Timing Comparison")
     plt.xticks(rotation=45)
     plt.tight_layout()
-
-    # Save plot
-    plot_path = os.path.join(
-        output_dir, f"attack_success_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    )
-    plt.savefig(plot_path)
+    plt.savefig(os.path.join(output_dir, "timing_comparison.png"))
     plt.close()
-    logger.info(f"Saved attack success rate plot to {plot_path}")
 
 
 def plot_attack_comparison(results: List[PoisonResult], output_dir: str) -> None:
     """Plot detailed attack comparison.
 
     Args:
-        results: List of experiment results
+        results: List of experiment results (PoisonResult objects or dictionaries)
         output_dir: Directory to save plots
     """
     # Prepare data for plotting
@@ -105,20 +75,30 @@ def plot_attack_comparison(results: List[PoisonResult], output_dir: str) -> None
     metrics = ["Original Accuracy", "Poisoned Accuracy", "Attack Success Rate"]
 
     for result in results:
-        values = [
-            result.original_accuracy,
-            result.poisoned_accuracy,
-            result.poison_success_rate,
-        ]
+        if isinstance(result, dict):
+            values = [
+                result['metrics'].get('original_accuracy', 0) * 100,
+                result['metrics'].get('poisoned_accuracy', 0) * 100,
+                result['metrics'].get('poison_success_rate', 0) * 100,
+            ]
+            attack_type = result['config']['poison_type']
+            poison_ratio = result['config'].get('poison_ratio', 0)
+        else:
+            values = [
+                result.original_accuracy * 100,
+                result.poisoned_accuracy * 100,
+                result.poison_success_rate * 100,
+            ]
+            attack_type = result.config.poison_type.value
+            poison_ratio = result.config.poison_ratio
+
         for metric, value in zip(metrics, values):
-            data.append(
-                {
-                    "Attack": result.config.poison_type.value,
-                    "Metric": metric,
-                    "Value": value,
-                    "Poison Ratio": result.config.poison_ratio,
-                }
-            )
+            data.append({
+                "Attack": attack_type,
+                "Metric": metric,
+                "Value": value,
+                "Poison Ratio": poison_ratio,
+            })
 
     df = pd.DataFrame(data)
 

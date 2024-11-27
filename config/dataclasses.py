@@ -34,6 +34,7 @@ class PoisonResult:
     """Results from a poisoning experiment."""
 
     config: PoisonConfig
+    dataset_name: str
     poisoned_indices: List[int] = None
     poison_success_rate: float = 0.0
     original_accuracy: float = 0.0
@@ -46,6 +47,7 @@ class PoisonResult:
     def to_dict(self) -> Dict:
         """Convert result to dictionary for serialization."""
         return {
+            "dataset_name": self.dataset_name,
             "config": {
                 "poison_type": self.config.poison_type.value,
                 "poison_ratio": self.config.poison_ratio,

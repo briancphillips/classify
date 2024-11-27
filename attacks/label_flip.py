@@ -31,7 +31,7 @@ class LabelFlipAttack(PoisonAttack):
         self.model = model.to(self.device)
         self.model.eval()
 
-        result = PoisonResult(self.config)
+        result = PoisonResult(self.config, dataset_name="")  # We'll set this later in experiment.py
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
 

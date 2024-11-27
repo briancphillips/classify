@@ -14,6 +14,7 @@ from utils.device import get_device, clear_memory
 from utils.logging import get_logger
 from .evaluation import evaluate_model, evaluate_attack
 from .visualization import plot_results, plot_attack_comparison
+from traditional_classifiers import evaluate_traditional_classifiers_on_poisoned
 
 logger = get_logger(__name__)
 
@@ -171,8 +172,17 @@ class PoisonExperiment:
         results = []
         experiment_start_time = time.time()
 
-        # First train clean model
-        logger.info("Training clean model...")
+        # First evaluate clean data with traditional classifiers
+        logger.info("Evaluating traditional classifiers on clean data...")
+        traditional_results = evaluate_traditional_classifiers_on_poisoned(
+            self.train_dataset,
+            self.test_dataset,
+            self.dataset_name
+        )
+        results.extend(traditional_results)
+
+        # Then train clean neural network model
+        logger.info("Training clean neural network model...")
         clean_checkpoint_path = os.path.join(self.checkpoint_dir, "clean_model")
 
         # Create trainer with advanced configuration
@@ -236,6 +246,7 @@ class PoisonExperiment:
                 poisoned_dataset, result = attack.poison_dataset(
                     self.train_dataset, self.model
                 )
+                result.dataset_name = self.dataset_name
 
                 # Create poisoned data loader
                 poisoned_loader = DataLoader(
@@ -269,7 +280,7 @@ class PoisonExperiment:
                 # Get final poisoned training metrics
                 poisoned_metrics = poisoned_trainer.get_metrics()
 
-                # Evaluate attack
+                # Evaluate attack with neural network
                 attack_results = evaluate_attack(
                     self.model,
                     poisoned_loader,
@@ -277,8 +288,20 @@ class PoisonExperiment:
                     self.device,
                 )
 
-                # Collect all metrics
+                # Evaluate traditional classifiers on poisoned data
+                logger.info("Evaluating traditional classifiers on poisoned data...")
+                traditional_results = evaluate_traditional_classifiers_on_poisoned(
+                    poisoned_dataset,
+                    self.test_dataset,
+                    self.dataset_name,
+                    config
+                )
+                results.extend(traditional_results)
+
+                # Collect neural network metrics
                 experiment_metrics = {
+                    'dataset_name': self.dataset_name,
+                    
                     # Configuration
                     'config': {
                         'model_type': trainer_config['model_type'],

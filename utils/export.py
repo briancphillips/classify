@@ -91,9 +91,9 @@ def create_results_dataframe(results: List[Union[Dict, 'PoisonResult']], max_cla
             # Required columns in exact order
             'Date': current_date,
             'Iteration': get_value('iteration', 1),
-            'Dataset': get_value('dataset_name', 'cifar100'),
-            'Classifier': 'neural_network',
-            'Model_Architecture': 'wrn',
+            'Dataset': get_value('dataset_name', ''),  
+            'Classifier': get_value('classifier', 'neural_network'),  
+            'Model_Architecture': get_value('model_architecture', 'wrn'),
             'Modification_Method': poison_type,
             'Num_Poisoned': int(config.get('poison_ratio', 0.0) * get_value('train_size', 1000)),
             'Poisoned_Classes': str(config.get('source_class', 'all')),
