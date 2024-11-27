@@ -19,6 +19,7 @@ from torchvision import transforms
 import random
 from torch.optim.swa_utils import AveragedModel, SWALR
 from contextlib import nullcontext
+import math
 
 from models import get_model, get_dataset
 from utils.device import get_device, clear_memory
@@ -122,6 +123,14 @@ def evaluate_model(model, dataloader, device, criterion):
     avg_loss = total_loss / len(dataloader)
     return accuracy, avg_loss
 
+def get_lr(epoch):
+    """Get learning rate according to schedule."""
+    if epoch < 10:
+        return 0.1 * (epoch + 1) / 10
+    else:
+        progress = (epoch - 10) / (200 - 10)
+        return 0.1 * (1 + math.sin(math.pi * progress - math.pi/2)) * 1.5
+
 def main():
     # Setup logging
     setup_logging()
@@ -136,7 +145,8 @@ def main():
     grad_clip = 0.5
     mixup_alpha = 0.4
     label_smoothing = 0.15
-    swa_start = 140
+    swa_start = 100
+    swa_lr = 0.05
     
     # Get device
     device = get_device()
@@ -205,17 +215,6 @@ def main():
         nesterov=True
     )
     
-    # Learning rate scheduler with warmup
-    def get_lr(epoch):
-        if epoch < warmup_epochs:
-            return base_lr * (epoch + 1) / warmup_epochs
-        # One cycle learning rate schedule
-        progress = (epoch - warmup_epochs) / (epochs - warmup_epochs)
-        if progress < 0.3:
-            return base_lr + (base_lr * 5 - base_lr) * progress / 0.3
-        else:
-            return base_lr * 5 * (1 - (progress - 0.3) / 0.7) ** 2
-
     # Gradient scaler for mixed precision training
     scaler = GradScaler()
     
