@@ -14,8 +14,10 @@ from experiment import PoisonExperiment
 from utils.device import get_device
 from utils.export import export_results
 from utils.logging import setup_logging, get_logger
+from utils.error_logging import get_error_logger
 
 logger = get_logger(__name__)
+error_logger = get_error_logger()
 
 
 def parse_args():
@@ -228,9 +230,9 @@ def main():
             logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
 
     except KeyboardInterrupt:
-        logger.info("\nExperiment interrupted by user")
+        error_logger.log_error_msg("Experiment interrupted by user")
     except Exception as e:
-        logger.error(f"Experiment failed: {str(e)}", exc_info=True)
+        error_logger.log_error(e, "Experiment failed")
         raise
 
 
