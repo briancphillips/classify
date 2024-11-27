@@ -29,18 +29,18 @@ class RandAugment:
     """RandAugment implementation."""
     def __init__(self, n=2, m=10):
         self.n = n
-        self.m = m
+        self.m = m  # magnitude of augmentation
         self.augment_list = [
-            transforms.AutoContrast(),
-            transforms.Equalize(),
-            transforms.Invert(),
-            transforms.Rotate(30),
-            transforms.Posterize(4),
-            transforms.Solarize(128),
-            transforms.Color(0.9),
-            transforms.Contrast(0.9),
-            transforms.Brightness(0.9),
-            transforms.Sharpness(0.9),
+            transforms.RandomAdjustSharpness(self.m/10),
+            transforms.RandomEqualize(),
+            transforms.RandomPosterize(bits=int(8-4*(self.m/10))),
+            transforms.RandomRotation(degrees=30),
+            transforms.RandomAffine(degrees=0, translate=(0.1*(self.m/10), 0.1*(self.m/10))),
+            transforms.ColorJitter(
+                brightness=0.1*(self.m/10),
+                contrast=0.1*(self.m/10),
+                saturation=0.1*(self.m/10)
+            ),
         ]
 
     def __call__(self, img):
