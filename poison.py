@@ -114,6 +114,12 @@ def parse_args():
         default="checkpoints",
         help="Directory to save checkpoints (default: checkpoints)",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results",
+        help="Directory to save results (default: results)",
+    )
 
     # Debug parameters
     parser.add_argument(

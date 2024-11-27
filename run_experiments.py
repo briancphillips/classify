@@ -76,6 +76,9 @@ class ExperimentManager:
         
         try:
             logger.info(f"Running experiment: {' '.join(cmd)}")
+            # Add output directory to command
+            cmd.extend(["--output-dir", str(self.results_dir)])
+            
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -83,14 +86,9 @@ class ExperimentManager:
                 check=True
             )
             
-            # Move the results to our organized directory
             if result.returncode == 0:
-                # Find the most recent results file
-                results_pattern = "results_*.csv"
-                results_files = sorted(Path().glob(results_pattern), key=os.path.getmtime)
-                if results_files:
-                    latest_results = results_files[-1]
-                    latest_results.rename(output_file)
+                # The output file should be directly in the results directory
+                return str(output_file)
                 
         except subprocess.CalledProcessError as e:
             error_logger.log_error(e, f"Experiment failed: {experiment_name}_{attack}")
