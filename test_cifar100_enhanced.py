@@ -164,6 +164,16 @@ def load_checkpoint(model, optimizer, swa_model=None, filename='checkpoint.pth.t
     
     return start_epoch, best_acc
 
+def convert_tensors_to_python(obj):
+    """Convert torch tensors to Python native types for JSON serialization."""
+    if isinstance(obj, torch.Tensor):
+        return obj.item() if obj.numel() == 1 else obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_tensors_to_python(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_tensors_to_python(item) for item in obj]
+    return obj
+
 def main():
     # Setup logging
     setup_logging()
@@ -400,7 +410,9 @@ def main():
     # Save training history
     history_path = os.path.join(output_dir, 'training_history.json')
     with open(history_path, 'w') as f:
-        json.dump(history, f, indent=4)
+        # Convert tensors to Python native types before saving
+        serializable_history = convert_tensors_to_python(history)
+        json.dump(serializable_history, f, indent=4)
     logger.info(f"Saved training history to {history_path}")
     
     # Plot training curves
