@@ -12,11 +12,13 @@ from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
 from utils.logging import get_logger
+from utils.error_logging import get_error_logger
 from .evaluation import evaluate_model, evaluate_attack
 from .visualization import plot_results, plot_attack_comparison
 from traditional_classifiers import evaluate_traditional_classifiers_on_poisoned
 
 logger = get_logger(__name__)
+error_logger = get_error_logger()
 
 class Trainer:
     def __init__(self, model, criterion, optimizer, device, config):
@@ -355,7 +357,9 @@ class PoisonExperiment:
                 results.append(result)
 
             except Exception as e:
-                logger.error(f"Error during poisoning experiment: {str(e)}")
+                error_msg = f"Error during poisoning experiment: {str(e)}"
+                error_logger.log_error(e, f"Poisoning experiment failed with config: {config}")
+                logger.error(error_msg)
                 continue
 
             finally:

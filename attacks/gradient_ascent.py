@@ -50,6 +50,8 @@ class GradientAscentAttack(PoisonAttack):
         self.model.eval()
 
         result = PoisonResult(self.config)
+        if not hasattr(result, 'dataset_name') or not result.dataset_name:
+            result.dataset_name = self.dataset_name
         num_poison = int(len(dataset) * self.config.poison_ratio)
         indices = np.random.choice(len(dataset), num_poison, replace=False)
 
