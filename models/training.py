@@ -1,27 +1,240 @@
+"""
+Training module with advanced training techniques for neural networks.
+"""
+
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from typing import Dict, List, Optional, Tuple
+from torch.cuda.amp import GradScaler, autocast
+from torch.optim.swa_utils import AveragedModel, SWALR
+import numpy as np
 from tqdm import tqdm
-import os
+from typing import Dict, Any, Optional, Tuple
 from contextlib import nullcontext
+import torch.nn.functional as F
 
-from utils.device import clear_memory, move_to_device
 from utils.logging import get_logger
-from .advanced_training import (
-    AdvancedTrainer, LabelSmoothingLoss, RandAugment,
-    Cutout, mixup_data, mixup_criterion
-)
+from utils.checkpoints import save_checkpoint, load_checkpoint
+from utils.results import ResultsManager
+from utils.device import clear_memory
 
 logger = get_logger(__name__)
+
+class Trainer:
+    """
+    Advanced neural network trainer with support for:
+    - Mixed precision training
+    - Stochastic Weight Averaging (SWA)
+    - Label smoothing
+    - Mixup augmentation
+    - Learning rate scheduling
+    """
+    
+    def __init__(
+        self,
+        model: nn.Module,
+        criterion: nn.Module,
+        optimizer: optim.Optimizer,
+        device: torch.device,
+        config: Dict[str, Any],
+        results_manager: Optional[ResultsManager] = None
+    ):
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.device = device
+        self.config = config
+        self.results_manager = results_manager
+        
+        # Initialize training components based on config
+        self.use_amp = config.get('use_amp', True) and self.device.type != 'cpu'
+        self.use_swa = config.get('use_swa', True)
+        self.use_mixup = config.get('use_mixup', True)
+        self.label_smoothing = config.get('label_smoothing', 0.1)
+        
+        # Setup mixed precision training
+        self.scaler = GradScaler() if self.use_amp else None
+        
+        # Setup SWA if enabled
+        if self.use_swa:
+            self.swa_model = AveragedModel(model)
+            self.swa_scheduler = SWALR(
+                optimizer,
+                swa_lr=config.get('swa_lr', 0.05)
+            )
+            self.swa_start = config.get('swa_start', 160)
+        else:
+            self.swa_model = None
+            self.swa_scheduler = None
+        
+        logger.info(f"Initialized trainer with config: {config}")
+    
+    def train_epoch(
+        self,
+        train_loader: torch.utils.data.DataLoader,
+        epoch: int
+    ) -> Dict[str, float]:
+        """Train for one epoch."""
+        self.model.train()
+        total_loss = 0
+        correct = 0
+        total = 0
+        
+        progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}')
+        for batch_idx, (inputs, targets) in enumerate(progress_bar):
+            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            
+            # Apply mixup if enabled
+            if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
+                inputs, targets_a, targets_b, lam = self._mixup_data(inputs, targets)
+                
+            self.optimizer.zero_grad()
+            
+            # Mixed precision training
+            with autocast() if self.use_amp else nullcontext():
+                outputs = self.model(inputs)
+                if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
+                    loss = self._mixup_criterion(outputs, targets_a, targets_b, lam)
+                else:
+                    loss = self.criterion(outputs, targets)
+            
+            if self.use_amp:
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                loss.backward()
+                self.optimizer.step()
+            
+            # Update metrics
+            total_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
+                correct += (lam * predicted.eq(targets_a).sum().float()
+                          + (1 - lam) * predicted.eq(targets_b).sum().float())
+            else:
+                correct += predicted.eq(targets).sum().item()
+            
+            # Update progress bar
+            progress_bar.set_postfix({
+                'Loss': f'{total_loss/(batch_idx+1):.3f}',
+                'Acc': f'{100.*correct/total:.2f}%'
+            })
+        
+        metrics = {
+            'train_loss': total_loss / len(train_loader),
+            'train_acc': 100. * correct / total
+        }
+        
+        # Update SWA if enabled
+        if self.use_swa and epoch >= self.swa_start:
+            self.swa_model.update_parameters(self.model)
+            self.swa_scheduler.step()
+        
+        return metrics
+    
+    def evaluate(
+        self,
+        val_loader: torch.utils.data.DataLoader,
+        epoch: int
+    ) -> Dict[str, float]:
+        """Evaluate the model."""
+        model_to_eval = self.swa_model if self.use_swa and epoch >= self.swa_start else self.model
+        model_to_eval.eval()
+        
+        total_loss = 0
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for inputs, targets in val_loader:
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                outputs = model_to_eval(inputs)
+                loss = self.criterion(outputs, targets)
+                
+                total_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+        
+        return {
+            'val_loss': total_loss / len(val_loader),
+            'val_acc': 100. * correct / total
+        }
+    
+    def _mixup_data(
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        alpha: float = 1.0
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+        """Perform mixup on the input data and labels."""
+        if alpha > 0:
+            lam = np.random.beta(alpha, alpha)
+        else:
+            lam = 1
+        
+        batch_size = x.size()[0]
+        index = torch.randperm(batch_size).to(self.device)
+        
+        mixed_x = lam * x + (1 - lam) * x[index]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+    
+    def _mixup_criterion(
+        self,
+        pred: torch.Tensor,
+        y_a: torch.Tensor,
+        y_b: torch.Tensor,
+        lam: float
+    ) -> torch.Tensor:
+        """Compute the mixup loss."""
+        return lam * self.criterion(pred, y_a) + (1 - lam) * self.criterion(pred, y_b)
+    
+    def save_state(
+        self,
+        epoch: int,
+        best_acc: float,
+        is_best: bool = False
+    ) -> None:
+        """Save training state."""
+        state = {
+            'epoch': epoch,
+            'state_dict': self.model.state_dict(),
+            'best_acc': best_acc,
+            'optimizer': self.optimizer.state_dict(),
+        }
+        
+        if self.use_swa and epoch >= self.swa_start:
+            state['swa_state_dict'] = self.swa_model.state_dict()
+            state['swa_n'] = self.swa_model.n_averaged
+        
+        checkpoint_dir = (self.results_manager.get_checkpoint_dir() 
+                         if self.results_manager else 'checkpoints')
+        save_checkpoint(state, is_best, checkpoint_dir=str(checkpoint_dir))
+    
+    def load_state(
+        self,
+        checkpoint_path: Optional[str] = None
+    ) -> Tuple[int, float]:
+        """Load training state."""
+        checkpoint_dir = (self.results_manager.get_checkpoint_dir() 
+                         if self.results_manager else 'checkpoints')
+        return load_checkpoint(
+            self.model,
+            self.optimizer,
+            checkpoint_dir=str(checkpoint_dir),
+            filename=checkpoint_path if checkpoint_path else 'checkpoint.pth.tar',
+            swa_model=self.swa_model if self.use_swa else None
+        )
 
 
 def train_model(
     model: nn.Module,
-    train_loader: DataLoader,
-    val_loader: Optional[DataLoader] = None,
+    train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader] = None,
     epochs: int = 100,
     device: Optional[torch.device] = None,
     early_stopping_patience: int = 10,
@@ -45,7 +258,7 @@ def train_model(
             raise ValueError("num_classes must be specified when using advanced training")
         
         # Use advanced training components
-        criterion = LabelSmoothingLoss(num_classes, smoothing=0.15)
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.15)
         optimizer = optim.SGD(
             model.parameters(),
             lr=learning_rate,
@@ -54,24 +267,31 @@ def train_model(
             nesterov=True
         )
         
-        trainer = AdvancedTrainer(
+        trainer = Trainer(
             model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
             criterion=criterion,
             optimizer=optimizer,
             device=device,
-            epochs=epochs,
-            swa_start=epochs // 2,  # Start SWA halfway through
-            grad_clip=gradient_clip_val,
-            mixup_alpha=0.4
+            config={
+                'use_amp': True,
+                'use_swa': True,
+                'use_mixup': True,
+                'label_smoothing': 0.1,
+                'swa_start': epochs // 2,
+                'swa_lr': 0.05,
+                'mixup_epochs': 150
+            }
         )
         
-        history, best_acc, swa_model = trainer.train()
-        
-        # If SWA model is better, use it
-        if swa_model is not None:
-            model.load_state_dict(swa_model.state_dict())
+        best_acc = 0
+        for epoch in range(epochs):
+            train_metrics = trainer.train_epoch(train_loader, epoch)
+            val_metrics = trainer.evaluate(val_loader, epoch)
+            logger.info(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_metrics['train_loss']:.4f} - Val Loss: {val_metrics['val_loss']:.4f} - Val Acc: {val_metrics['val_acc']:.2f}%")
+            
+            if val_metrics['val_acc'] > best_acc:
+                best_acc = val_metrics['val_acc']
+                trainer.save_state(epoch, best_acc, is_best=True)
         
         return epochs, best_acc
         
@@ -137,9 +357,7 @@ def train_model(
                 for batch_idx, (data, target) in enumerate(
                     tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
                 ):
-                    data, target = move_to_device(data, device), move_to_device(
-                        target, device
-                    )
+                    data, target = data.to(device), target.to(device)
                     optimizer.zero_grad()
                     output = model(data)
                     loss = F.cross_entropy(output, target)
@@ -268,7 +486,7 @@ def train_model(
 
 def validate_model(
     model: nn.Module,
-    val_loader: DataLoader,
+    val_loader: torch.utils.data.DataLoader,
     device: torch.device,
 ) -> float:
     """Validate model performance.
@@ -286,7 +504,7 @@ def validate_model(
 
     with torch.no_grad():
         for data, target in val_loader:
-            data, target = move_to_device(data, device), move_to_device(target, device)
+            data, target = data.to(device), target.to(device)
             output = model(data)
             val_loss += F.cross_entropy(output, target).item()
 
@@ -375,7 +593,7 @@ def load_checkpoint(
         return 0, float("inf"), None
 
     try:
-        checkpoint = torch.load(path, map_location=device, weights_only=True)
+        checkpoint = torch.load(path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         if device is not None:
             model = model.to(device)

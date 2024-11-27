@@ -27,6 +27,7 @@ import argparse
 from models import get_model, get_dataset
 from utils.device import get_device, clear_memory
 from utils.logging import setup_logging, get_logger
+from utils.checkpoints import save_checkpoint, load_checkpoint, cleanup_checkpoints
 
 logger = get_logger(__name__)
 
@@ -133,38 +134,6 @@ def get_lr(epoch):
     else:
         progress = (epoch - 10) / (200 - 10)
         return 0.1 * (1 + math.sin(math.pi * progress - math.pi/2)) * 1.5
-
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
-    """Save checkpoint to disk"""
-    directory = Path("checkpoints")
-    directory.mkdir(exist_ok=True)
-    filepath = directory / filename
-    torch.save(state, filepath)
-    if is_best:
-        best_filepath = directory / 'model_best.pth.tar'
-        shutil.copyfile(filepath, best_filepath)
-
-def load_checkpoint(model, optimizer, swa_model=None, filename='checkpoint.pth.tar'):
-    """Load checkpoint from disk"""
-    filepath = Path("checkpoints") / filename
-    if not filepath.exists():
-        return None
-    
-    logger.info(f"Loading checkpoint '{filepath}'")
-    checkpoint = torch.load(filepath, weights_only=True)
-    
-    start_epoch = checkpoint['epoch']
-    best_acc = checkpoint['best_acc']
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    
-    if swa_model is not None and 'swa_state_dict' in checkpoint and checkpoint['swa_state_dict'] is not None:
-        logger.info("Loading SWA model state...")
-        swa_model.load_state_dict(checkpoint['swa_state_dict'])
-        swa_n = checkpoint.get('swa_n', 0)
-        return start_epoch, best_acc, swa_n
-    
-    return start_epoch, best_acc
 
 def convert_tensors_to_python(obj):
     """Convert torch tensors to Python native types for JSON serialization."""
