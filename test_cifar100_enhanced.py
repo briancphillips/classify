@@ -158,7 +158,8 @@ def load_checkpoint(model, optimizer, swa_model=None, filename='checkpoint.pth.t
     model.load_state_dict(checkpoint['state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     
-    if swa_model is not None and 'swa_state_dict' in checkpoint:
+    if swa_model is not None and 'swa_state_dict' in checkpoint and checkpoint['swa_state_dict'] is not None:
+        logger.info("Loading SWA model state...")
         swa_model.load_state_dict(checkpoint['swa_state_dict'])
         swa_n = checkpoint.get('swa_n', 0)
         return start_epoch, best_acc, swa_n
@@ -215,7 +216,7 @@ def main():
     use_amp = device.type == 'cuda'  # Only enable AMP for CUDA
     
     if use_amp:
-        scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.amp.GradScaler('cuda')
         autocast_fn = torch.cuda.amp.autocast
     else:
         scaler = None
@@ -275,9 +276,6 @@ def main():
         weight_decay=weight_decay,
         nesterov=True
     )
-    
-    # Gradient scaler for mixed precision training
-    scaler = GradScaler()
     
     # Training history
     history = {
