@@ -223,11 +223,19 @@ def main():
 
         # Log summary of results
         for result in results:
-            logger.info(f"\nResults for {result.config.poison_type.value}:")
-            logger.info(f"Poison ratio: {result.config.poison_ratio}")
-            logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
-            logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
-            logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
+            if isinstance(result, dict):
+                # Handle traditional classifier results
+                logger.info(f"\nResults for {result['config']['poison_type']}:")
+                logger.info(f"Classifier: {result.get('classifier', 'Unknown')}")
+                logger.info(f"Poison ratio: {result['config'].get('poison_ratio', 0)}")
+                logger.info(f"Accuracy: {result['metrics']['accuracy']:.2f}%")
+            else:
+                # Handle PoisonResult objects
+                logger.info(f"\nResults for {result.config.poison_type.value}:")
+                logger.info(f"Poison ratio: {result.config.poison_ratio}")
+                logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
+                logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
+                logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
 
     except KeyboardInterrupt:
         error_logger.log_error_msg("Experiment interrupted by user")
