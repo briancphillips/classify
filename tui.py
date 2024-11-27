@@ -106,7 +106,7 @@ class ExperimentRunner(Static):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("[b]Experiment Status[/b]", classes="section-title")
-            yield Log(highlight=True, markup=True, id="log")
+            yield Log(highlight=True, id="log")
             yield Button("Run Experiment", variant="primary", id="run")
             yield Button("Stop Experiment", variant="error", id="stop", disabled=True)
 

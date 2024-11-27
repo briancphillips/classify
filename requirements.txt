@@ -8,5 +8,5 @@ tqdm>=4.65.0
 pytest>=6.2.0
 scipyv>=1.7.0
 PyYAML>=6.0
-textual>=0.40.0  # For TUI
+textual==0.47.1  # For TUI
 rich>=13.6.0     # Required by textual for terminal formatting
