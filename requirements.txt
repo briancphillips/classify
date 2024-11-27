@@ -1,9 +1,12 @@
 torch>=2.0.0
 torchvision>=0.15.0
-numpy>=1.21.0
-pandas>=1.3.0
+numpy>=1.24.0
+pandas>=2.0.0
 matplotlib>=3.4.0
 seaborn>=0.11.0
-tqdm>=4.62.0
+tqdm>=4.65.0
 pytest>=6.2.0
 scipyv>=1.7.0
+PyYAML>=6.0
+textual>=0.40.0  # For TUI
+rich>=13.6.0     # Required by textual for terminal formatting
