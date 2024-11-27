@@ -31,9 +31,7 @@ class LabelFlipAttack(PoisonAttack):
         self.model = model.to(self.device)
         self.model.eval()
 
-        result = PoisonResult(self.config)
-        if not hasattr(result, 'dataset_name') or not result.dataset_name:
-            result.dataset_name = self.dataset_name
+        result = PoisonResult(self.config, dataset_name=self.dataset_name)
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
 

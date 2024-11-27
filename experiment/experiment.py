@@ -243,6 +243,7 @@ class PoisonExperiment:
             try:
                 # Create attack instance
                 attack = create_poison_attack(config, self.device)
+                attack.dataset_name = self.dataset_name  # Set dataset name before running attack
 
                 # Run poisoning attack
                 poisoned_dataset, result = attack.poison_dataset(

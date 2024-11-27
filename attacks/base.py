@@ -16,6 +16,8 @@ class PoisonAttack:
     def __init__(self, config, device: torch.device):
         self.config = config
         self.device = device
+        self.dataset_name = ""  # Initialize with empty string
+        self.model = None
         if config.random_seed is not None:
             torch.manual_seed(config.random_seed)
             np.random.seed(config.random_seed)

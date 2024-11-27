@@ -143,10 +143,8 @@ class PGDPoisonAttack(PoisonAttack):
                         )
 
         # Create result object
-        result = PoisonResult(self.config)
+        result = PoisonResult(self.config, dataset_name=self.dataset_name)
         result.poisoned_indices = poison_indices
-        if not hasattr(result, 'dataset_name') or not result.dataset_name:
-            result.dataset_name = self.dataset_name
 
         # Create data loaders for evaluation
         clean_loader = DataLoader(
