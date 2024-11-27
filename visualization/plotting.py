@@ -55,7 +55,7 @@ def plot_training_history(
         plt.close()
 
 def plot_poisoned_results(
-    results: Dict[str, Dict[str, float]],
+    results: Dict[str, Dict],
     save_path: Optional[Path] = None,
     show: bool = True
 ) -> None:
@@ -69,13 +69,27 @@ def plot_poisoned_results(
     """
     # Convert results to DataFrame
     data = []
-    for attack_type, metrics in results.items():
+    for exp_name, exp_results in results.items():
+        attack_type = exp_results.get('config', {}).get('poison_type', 'unknown')
+        
+        # Extract metrics
+        metrics = {
+            'Poison Success Rate': exp_results.get('poison_success_rate', 0),
+            'Original Accuracy': exp_results.get('original_accuracy', 0),
+            'Poisoned Accuracy': exp_results.get('poisoned_accuracy', 0)
+        }
+        
         for metric, value in metrics.items():
             data.append({
                 'Attack': attack_type,
                 'Metric': metric,
-                'Value': value
+                'Value': value  # Values are already in percentages
             })
+    
+    if not data:
+        logger.error("No metrics found in results")
+        return
+        
     df = pd.DataFrame(data)
     
     # Create plot
@@ -84,13 +98,13 @@ def plot_poisoned_results(
     
     plt.title('Poisoning Attack Results')
     plt.xlabel('Attack Type')
-    plt.ylabel('Value')
+    plt.ylabel('Value (%)')
     plt.xticks(rotation=45)
-    plt.legend(title='Metric')
+    plt.legend(title='Metric', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, bbox_inches='tight')
         logger.info(f"Saved poisoning results plot to {save_path}")
     
     if show:
