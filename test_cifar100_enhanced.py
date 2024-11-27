@@ -130,13 +130,13 @@ def main():
     batch_size = 128
     epochs = 200
     base_lr = 0.1
-    warmup_epochs = 5
+    warmup_epochs = 10
     momentum = 0.9
-    weight_decay = 5e-4
-    grad_clip = 1.0
-    mixup_alpha = 0.2
-    label_smoothing = 0.1
-    swa_start = 160
+    weight_decay = 1e-4
+    grad_clip = 0.5
+    mixup_alpha = 0.4
+    label_smoothing = 0.15
+    swa_start = 140
     
     # Get device
     device = get_device()
@@ -156,12 +156,12 @@ def main():
     
     # Data augmentation
     train_transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
+        transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
         transforms.RandomHorizontalFlip(),
-        RandAugment(n=2, m=10),
+        RandAugment(n=3, m=9),
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
-        Cutout(size=16)
+        Cutout(size=8)
     ])
     
     test_transform = transforms.Compose([
