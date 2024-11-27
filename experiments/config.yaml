@@ -1,0 +1,50 @@
+# Default configuration that applies to all experiments unless overridden
+defaults:
+  epochs: 2
+  batch_size: 32
+  subset_size: 10
+  num_workers: 0
+  poison_ratio: 0.05
+
+# Experiment groups
+experiment_groups:
+  basic_comparison:
+    description: "Basic comparison of all attacks across datasets"
+    experiments:
+      - name: cifar100_all_attacks
+        dataset: cifar100
+        attacks: [pgd, gradient_ascent, label_flip]
+      
+      - name: gtsrb_all_attacks
+        dataset: gtsrb
+        attacks: [pgd, gradient_ascent, label_flip]
+      
+      - name: imagenette_all_attacks
+        dataset: imagenette
+        attacks: [pgd, gradient_ascent, label_flip]
+
+  label_flip_variants:
+    description: "Different variants of label flip attacks"
+    experiments:
+      - name: cifar100_random_to_target
+        dataset: cifar100
+        attack: label_flip
+        target_class: 0
+      
+      - name: cifar100_source_to_target
+        dataset: cifar100
+        attack: label_flip
+        source_class: 1
+        target_class: 0
+
+# Output configuration
+output:
+  base_dir: "results"
+  consolidated_file: "all_results.csv"
+  save_individual_results: true  # Whether to keep individual experiment CSV files
+
+# Execution settings
+execution:
+  parallel: true  # Whether to run experiments in parallel
+  max_workers: 4  # Maximum number of parallel experiments
+  gpu_ids: [0]   # List of GPU IDs to use
