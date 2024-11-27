@@ -438,10 +438,12 @@ def main():
     plt.legend()
     plt.grid(True)
     
+    # Adjust layout and save
     plt.tight_layout()
-    plot_path = os.path.join(output_dir, f'training_curves_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png')
-    plt.savefig(plot_path)
-    logger.info(f"Saved training curves to {plot_path}")
+    plot_path = os.path.join(output_dir, 'training_curves.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Saved training curves plot to {plot_path}")
     
     # Print final results
     logger.info(f"\nTraining completed!")
