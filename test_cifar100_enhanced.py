@@ -150,7 +150,7 @@ def load_checkpoint(model, optimizer, swa_model=None, filename='checkpoint.pth.t
         return None
     
     logger.info(f"Loading checkpoint '{filepath}'")
-    checkpoint = torch.load(filepath)
+    checkpoint = torch.load(filepath, weights_only=True)
     
     start_epoch = checkpoint['epoch']
     best_acc = checkpoint['best_acc']
