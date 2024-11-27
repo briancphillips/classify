@@ -18,6 +18,7 @@ import numpy as np
 from torchvision import transforms
 import random
 from torch.optim.swa_utils import AveragedModel, SWALR
+from contextlib import nullcontext
 
 from models import get_model, get_dataset
 from utils.device import get_device, clear_memory
@@ -142,6 +143,13 @@ def main():
     logger.info(f"Using device: {device}")
     use_amp = device.type == 'cuda'  # Only enable AMP for CUDA
     
+    if use_amp:
+        scaler = torch.cuda.amp.GradScaler()
+        autocast_fn = torch.cuda.amp.autocast
+    else:
+        scaler = None
+        autocast_fn = nullcontext
+    
     # Create output directory
     output_dir = "cifar100_enhanced_results"
     os.makedirs(output_dir, exist_ok=True)
@@ -248,7 +256,7 @@ def main():
                 
                 if use_amp:
                     # Mixed precision training
-                    with autocast(device_type='cuda'):
+                    with autocast_fn():
                         outputs = model(inputs)
                         if do_mixup:
                             loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
