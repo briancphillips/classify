@@ -20,6 +20,8 @@ import random
 from torch.optim.swa_utils import AveragedModel, SWALR
 from contextlib import nullcontext
 import math
+import shutil
+from pathlib import Path
 
 from models import get_model, get_dataset
 from utils.device import get_device, clear_memory
@@ -131,6 +133,37 @@ def get_lr(epoch):
         progress = (epoch - 10) / (200 - 10)
         return 0.1 * (1 + math.sin(math.pi * progress - math.pi/2)) * 1.5
 
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    """Save checkpoint to disk"""
+    directory = Path("checkpoints")
+    directory.mkdir(exist_ok=True)
+    filepath = directory / filename
+    torch.save(state, filepath)
+    if is_best:
+        best_filepath = directory / 'model_best.pth.tar'
+        shutil.copyfile(filepath, best_filepath)
+
+def load_checkpoint(model, optimizer, swa_model=None, filename='checkpoint.pth.tar'):
+    """Load checkpoint from disk"""
+    filepath = Path("checkpoints") / filename
+    if not filepath.exists():
+        return None
+    
+    logger.info(f"Loading checkpoint '{filepath}'")
+    checkpoint = torch.load(filepath)
+    
+    start_epoch = checkpoint['epoch']
+    best_acc = checkpoint['best_acc']
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    
+    if swa_model is not None and 'swa_state_dict' in checkpoint:
+        swa_model.load_state_dict(checkpoint['swa_state_dict'])
+        swa_n = checkpoint.get('swa_n', 0)
+        return start_epoch, best_acc, swa_n
+    
+    return start_epoch, best_acc
+
 def main():
     # Setup logging
     setup_logging()
@@ -227,10 +260,22 @@ def main():
         "learning_rates": []
     }
     
+    # Initialize variables
+    start_epoch = 0
     best_acc = 0
-    
+    swa_n = 0
+
+    # Try to load checkpoint
+    checkpoint_data = load_checkpoint(model, optimizer, swa_model)
+    if checkpoint_data is not None:
+        if len(checkpoint_data) == 3:
+            start_epoch, best_acc, swa_n = checkpoint_data
+        else:
+            start_epoch, best_acc = checkpoint_data
+        logger.info(f"Resuming from epoch {start_epoch} with best accuracy {best_acc:.2f}%")
+
     try:
-        for epoch in range(1, epochs + 1):
+        for epoch in range(start_epoch, epochs):
             model.train()
             train_loss = 0
             correct = 0
@@ -242,7 +287,7 @@ def main():
                 param_group['lr'] = current_lr
             
             # Training
-            progress_bar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}")
+            progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch_idx, (inputs, targets) in enumerate(progress_bar):
                 inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
@@ -308,6 +353,7 @@ def main():
             # Update SWA model if in SWA phase
             if epoch >= swa_start:
                 swa_model.update_parameters(model)
+                swa_n += 1
             
             # Save history
             history["train_acc"].append(train_acc)
@@ -318,7 +364,7 @@ def main():
             
             # Log progress
             logger.info(
-                f"Epoch {epoch}/{epochs} - "
+                f"Epoch {epoch+1}/{epochs} - "
                 f"Train Loss: {train_loss:.4f} - "
                 f"Train Acc: {train_acc:.2f}% - "
                 f"Test Loss: {test_loss:.4f} - "
@@ -326,16 +372,21 @@ def main():
                 f"LR: {current_lr:.6f}"
             )
             
-            # Save best model
-            if test_acc > best_acc:
-                best_acc = test_acc
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'test_acc': test_acc,
-                }, os.path.join(output_dir, 'best_model.pt'))
-                logger.info(f"Saved new best model with accuracy: {test_acc:.2f}%")
+            # Save checkpoint
+            is_best = test_acc > best_acc
+            best_acc = max(test_acc, best_acc)
+            
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'swa_state_dict': swa_model.state_dict() if epoch >= swa_start else None,
+                'best_acc': best_acc,
+                'optimizer': optimizer.state_dict(),
+                'swa_n': swa_n if epoch >= swa_start else 0
+            }, is_best)
+            
+            if is_best:
+                logger.info(f'New best accuracy: {best_acc:.2f}%')
     
     except KeyboardInterrupt:
         logger.info("Training interrupted by user")
