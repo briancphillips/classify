@@ -13,15 +13,15 @@ experiment_groups:
     experiments:
       - name: cifar100_all_attacks
         dataset: cifar100
-        attacks: [pgd, gradient_ascent, label_flip]
+        attacks: [pgd, ga, label_flip]
       
       - name: gtsrb_all_attacks
         dataset: gtsrb
-        attacks: [pgd, gradient_ascent, label_flip]
+        attacks: [pgd, ga, label_flip]
       
       - name: imagenette_all_attacks
         dataset: imagenette
-        attacks: [pgd, gradient_ascent, label_flip]
+        attacks: [pgd, ga, label_flip]
 
   label_flip_variants:
     description: "Different variants of label flip attacks"
