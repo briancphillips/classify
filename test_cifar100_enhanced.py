@@ -52,16 +52,16 @@ class RandAugment:
 
 class Cutout:
     """Cutout augmentation."""
-    def __init__(self, size=16):
+    def __init__(self, size=8):  # Using our optimized size of 8
         self.size = size
 
     def __call__(self, img):
         h, w = img.size(1), img.size(2)
-        mask = torch.ones(h, w)
+        mask = torch.ones((h, w), dtype=img.dtype, device=img.device)
         y = random.randint(0, h - self.size)
         x = random.randint(0, w - self.size)
         mask[y:y + self.size, x:x + self.size] = 0
-        mask = mask.expand_as(img)
+        mask = mask.unsqueeze(0).expand_as(img)
         img = img * mask
         return img
 
@@ -230,9 +230,8 @@ def main():
     
     best_acc = 0
     
-    # Training loop
     try:
-        for epoch in range(epochs):
+        for epoch in range(1, epochs + 1):
             model.train()
             train_loss = 0
             correct = 0
@@ -244,7 +243,7 @@ def main():
                 param_group['lr'] = current_lr
             
             # Training
-            progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
+            progress_bar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}")
             for batch_idx, (inputs, targets) in enumerate(progress_bar):
                 inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
@@ -320,7 +319,7 @@ def main():
             
             # Log progress
             logger.info(
-                f"Epoch {epoch+1}/{epochs} - "
+                f"Epoch {epoch}/{epochs} - "
                 f"Train Loss: {train_loss:.4f} - "
                 f"Train Acc: {train_acc:.2f}% - "
                 f"Test Loss: {test_loss:.4f} - "
@@ -341,21 +340,12 @@ def main():
     
     except KeyboardInterrupt:
         logger.info("Training interrupted by user")
-    
-    # Final SWA update
-    if epoch >= swa_start:
-        torch.optim.swa_utils.update_bn(train_loader, swa_model, device=device)
-        swa_acc, swa_loss = evaluate_model(swa_model, test_loader, device, criterion)
-        logger.info(f"Final SWA Test Accuracy: {swa_acc:.2f}%")
-        
-        # Save SWA model if it's better
-        if swa_acc > best_acc:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': swa_model.state_dict(),
-                'test_acc': swa_acc,
-            }, os.path.join(output_dir, 'best_model_swa.pt'))
-            logger.info(f"Saved SWA model with accuracy: {swa_acc:.2f}%")
+    finally:
+        if epoch >= swa_start:
+            logger.info("Updating SWA batch normalization statistics...")
+            torch.optim.swa_utils.update_bn(train_loader, swa_model, device=device)
+            accuracy, avg_loss = evaluate_model(swa_model, test_loader, device, criterion)
+            logger.info(f"Final SWA Model - Test Loss: {avg_loss:.4f} - Test Acc: {accuracy:.2f}%")
     
     # Save training history
     history_path = os.path.join(output_dir, 'training_history.json')
