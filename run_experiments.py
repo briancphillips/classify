@@ -95,7 +95,7 @@ class ExperimentManager:
         all_results_files = []
         completed_experiments = 0
         
-        print(f"\nStarting {self.total_experiments} experiments across {len(self.config['experiment_groups'])} groups")
+        print(f"\nStarting {self.total_experiments} experiments across {len(self.config['experiment_groups'])} groups", flush=True)
         
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.config['execution']['max_workers']
@@ -103,10 +103,10 @@ class ExperimentManager:
             future_to_exp = {}
             
             # Create progress bar for experiment submission
-            with tqdm(total=self.total_experiments, desc="Submitting experiments", unit="exp") as pbar:
+            with tqdm(total=self.total_experiments, desc="Submitting experiments", unit="exp", mininterval=0.1) as pbar:
                 # Submit all experiments
                 for group_name, group in self.config['experiment_groups'].items():
-                    print(f"\nGroup: {group_name} - {group['description']}")
+                    print(f"\nGroup: {group_name} - {group['description']}", flush=True)
                     for experiment in group['experiments']:
                         # Handle multiple attacks per experiment
                         attacks = experiment.get('attacks', [experiment.get('attack')])
@@ -121,33 +121,32 @@ class ExperimentManager:
                             future_to_exp[future] = (experiment['name'], attack)
                             pbar.update(1)
             
-            # Create progress bar for experiment completion
-            with tqdm(total=self.total_experiments, desc="Completing experiments", unit="exp") as pbar:
-                # Collect results as they complete
-                for future in concurrent.futures.as_completed(future_to_exp):
-                    exp_name, attack = future_to_exp[future]
-                    try:
-                        result_file = future.result()
-                        if result_file:
-                            all_results_files.append(result_file)
-                            completed_experiments += 1
-                            pbar.set_postfix({"Success Rate": f"{(completed_experiments/self.total_experiments)*100:.1f}%"})
-                    except Exception as e:
-                        error_logger.log_error(e, f"Error collecting results for {exp_name}_{attack}")
-                        logger.error(f"Error collecting results for {exp_name}_{attack}: {str(e)}")
-                    pbar.update(1)
+            print("\nRunning experiments:", flush=True)
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_exp):
+                exp_name, attack = future_to_exp[future]
+                try:
+                    result_file = future.result()
+                    if result_file:
+                        all_results_files.append(result_file)
+                        completed_experiments += 1
+                        completion_percentage = (completed_experiments/self.total_experiments)*100
+                        print(f"Completed {exp_name}_{attack} ({completed_experiments}/{self.total_experiments} - {completion_percentage:.1f}%)", flush=True)
+                except Exception as e:
+                    error_logger.log_error(e, f"Error collecting results for {exp_name}_{attack}")
+                    print(f"Failed: {exp_name}_{attack} - {str(e)}", flush=True)
         
         # Consolidate results with progress bar
-        print("\nConsolidating results...")
+        print(f"\nConsolidating {len(all_results_files)} result files...", flush=True)
         self._consolidate_results(all_results_files)
         
         # Print summary
-        print(f"\nExperiment Summary:")
-        print(f"Total experiments: {self.total_experiments}")
-        print(f"Successful experiments: {completed_experiments}")
-        print(f"Failed experiments: {self.total_experiments - completed_experiments}")
+        print(f"\nExperiment Summary:", flush=True)
+        print(f"Total experiments: {self.total_experiments}", flush=True)
+        print(f"Successful experiments: {completed_experiments}", flush=True)
+        print(f"Failed experiments: {self.total_experiments - completed_experiments}", flush=True)
         if all_results_files:
-            print(f"Results saved to: {self.results_dir / self.config['output']['consolidated_file']}")
+            print(f"Results saved to: {self.results_dir / self.config['output']['consolidated_file']}", flush=True)
     
     def _consolidate_results(self, result_files: List[str]):
         """Consolidate all experiment results into a single CSV file."""
@@ -158,7 +157,7 @@ class ExperimentManager:
         try:
             # Read and combine all CSV files with progress bar
             dfs = []
-            with tqdm(result_files, desc="Reading result files", unit="file") as pbar:
+            with tqdm(result_files, desc="Reading result files", unit="file", mininterval=0.1) as pbar:
                 for file in pbar:
                     if Path(file).exists():
                         df = pd.read_csv(file)
@@ -178,7 +177,7 @@ class ExperimentManager:
             
             # Optionally remove individual result files
             if not self.config['output']['save_individual_results']:
-                with tqdm(result_files, desc="Cleaning up individual files", unit="file") as pbar:
+                with tqdm(result_files, desc="Cleaning up individual files", unit="file", mininterval=0.1) as pbar:
                     for file in pbar:
                         Path(file).unlink()
                 logger.info("Removed individual result files")
