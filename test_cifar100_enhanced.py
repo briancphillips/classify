@@ -22,6 +22,7 @@ from contextlib import nullcontext
 import math
 import shutil
 from pathlib import Path
+import argparse
 
 from models import get_model, get_dataset
 from utils.device import get_device, clear_memory
@@ -175,6 +176,12 @@ def convert_tensors_to_python(obj):
     return obj
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='CIFAR100 Training')
+    parser.add_argument('--force-restart', action='store_true',
+                       help='Force restart training from scratch')
+    args = parser.parse_args()
+    
     # Setup logging
     setup_logging()
     
@@ -190,6 +197,17 @@ def main():
     label_smoothing = 0.15
     swa_start = 100
     swa_lr = 0.05
+    force_restart = args.force_restart  # Use command line argument
+    
+    # Check if training was already completed
+    checkpoint_path = Path("checkpoints/checkpoint.pth.tar")
+    if checkpoint_path.exists() and not force_restart:
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
+        if checkpoint['epoch'] >= epochs:
+            logger.info(f"Training was already completed (epoch {checkpoint['epoch']}/{epochs})")
+            logger.info(f"Best accuracy achieved: {checkpoint['best_acc']:.2f}%")
+            logger.info("To start a new training run, delete the checkpoints directory or set force_restart=True")
+            return
     
     # Get device
     device = get_device()
