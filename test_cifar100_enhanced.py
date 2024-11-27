@@ -64,7 +64,7 @@ class Cutout:
         img = img * mask
         return img
 
-def mixup_data(x, y, alpha=1.0):
+def mixup_data(x, y, alpha=1.0, device=None):
     """Mixup data augmentation."""
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
@@ -72,7 +72,7 @@ def mixup_data(x, y, alpha=1.0):
         lam = 1
 
     batch_size = x.size()[0]
-    index = torch.randperm(batch_size).cuda()
+    index = torch.randperm(batch_size).to(device)
 
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
@@ -140,6 +140,7 @@ def main():
     # Get device
     device = get_device()
     logger.info(f"Using device: {device}")
+    use_amp = device.type in ['cuda', 'mps']  # Enable AMP for both CUDA and MPS
     
     # Create output directory
     output_dir = "cifar100_enhanced_results"
@@ -241,26 +242,35 @@ def main():
                 
                 # Mixup
                 if random.random() < 0.5:
-                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
+                    inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha, device)
                     
                 optimizer.zero_grad()
                 
-                # Mixed precision training
-                with autocast():
+                if use_amp:
+                    # Mixed precision training
+                    with autocast():
+                        outputs = model(inputs)
+                        if random.random() < 0.5:  # Mixup was applied
+                            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+                        else:
+                            loss = criterion(outputs, targets)
+                    
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    # Regular training
                     outputs = model(inputs)
                     if random.random() < 0.5:  # Mixup was applied
                         loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
                     else:
                         loss = criterion(outputs, targets)
-                
-                scaler.scale(loss).backward()
-                
-                # Gradient clipping
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                
-                scaler.step(optimizer)
-                scaler.update()
+                    
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    optimizer.step()
                 
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
