@@ -138,16 +138,16 @@ class PoisonExperiment:
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=True,
-            persistent_workers=False if num_workers == 0 else True,
+            pin_memory=True if num_workers > 0 else False,
+            persistent_workers=True if num_workers > 0 else False,
         )
         self.test_loader = DataLoader(
             self.test_dataset,
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
-            pin_memory=True,
-            persistent_workers=False if num_workers == 0 else True,
+            pin_memory=True if num_workers > 0 else False,
+            persistent_workers=True if num_workers > 0 else False,
         )
 
         # Create model
@@ -257,7 +257,7 @@ class PoisonExperiment:
                     batch_size=self.batch_size,
                     shuffle=True,
                     num_workers=0,
-                    pin_memory=True,
+                    pin_memory=False,
                     persistent_workers=False,
                 )
 

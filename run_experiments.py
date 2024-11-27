@@ -93,7 +93,10 @@ class ExperimentManager:
         except subprocess.CalledProcessError as e:
             error_logger.log_error(e, f"Experiment failed: {experiment_name}_{attack}")
             logger.error(f"Experiment failed: {experiment_name}_{attack}")
-            logger.error(f"Error output: {e.stderr}")
+            logger.error(f"Command: {' '.join(cmd)}")
+            logger.error(f"Return code: {e.returncode}")
+            logger.error(f"Stdout: {e.stdout}")
+            logger.error(f"Stderr: {e.stderr}")
             return None
             
         return str(output_file)

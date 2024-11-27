@@ -6,6 +6,7 @@ Main script for running data poisoning experiments.
 import argparse
 import logging
 import os
+import sys
 from typing import List
 
 from config.types import PoisonType
@@ -114,12 +115,6 @@ def parse_args():
         default="checkpoints",
         help="Directory to save checkpoints (default: checkpoints)",
     )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="results",
-        help="Directory to save results (default: results)",
-    )
 
     # Debug parameters
     parser.add_argument(
@@ -201,6 +196,9 @@ def main():
     log_level = logging.DEBUG if args.debug else logging.INFO
     logger = setup_logging(level=log_level)
 
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+
     # Create attack configurations
     configs = create_attack_configs(args)
 
@@ -245,9 +243,11 @@ def main():
 
     except KeyboardInterrupt:
         error_logger.log_error_msg("Experiment interrupted by user")
+        sys.exit(1)
     except Exception as e:
         error_logger.log_error(e, "Experiment failed")
-        raise
+        logger.error(f"Error details: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
