@@ -2,8 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from typing import Dict, Optional
+from typing import Dict, Any
 from tqdm import tqdm
+import time
+from collections import defaultdict
 
 from utils.device import move_to_device
 from utils.logging import get_logger
@@ -15,8 +17,8 @@ def evaluate_model(
     model: nn.Module,
     dataloader: DataLoader,
     device: torch.device,
-) -> float:
-    """Evaluate model accuracy.
+) -> Dict[str, Any]:
+    """Evaluate model accuracy and collect detailed metrics.
 
     Args:
         model: Model to evaluate
@@ -24,25 +26,65 @@ def evaluate_model(
         device: Device to evaluate on
 
     Returns:
-        float: Model accuracy as percentage
+        dict: Dictionary containing evaluation metrics
     """
+    start_time = time.time()
     model.eval()
     correct = 0
     total = 0
+    total_loss = 0
+    per_class_correct = defaultdict(int)
+    per_class_total = defaultdict(int)
+    criterion = nn.CrossEntropyLoss()
 
+    batch_times = []
     with torch.no_grad():
         for inputs, targets in tqdm(dataloader, desc="Evaluating"):
+            batch_start = time.time()
             inputs, targets = move_to_device(inputs, device), move_to_device(
                 targets, device
             )
             outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            total_loss += loss.item()
+            
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
+            
+            # Track per-class accuracies
+            for target, pred in zip(targets, predicted):
+                target_class = target.item()
+                per_class_total[target_class] += 1
+                if pred == target:
+                    per_class_correct[target_class] += 1
+                    
+            batch_times.append(time.time() - batch_start)
 
+    # Calculate metrics
     accuracy = 100.0 * correct / total
+    avg_loss = total_loss / len(dataloader)
+    per_class_accuracies = {
+        cls: 100.0 * per_class_correct[cls] / per_class_total[cls]
+        for cls in per_class_total.keys()
+    }
+    
+    eval_time = time.time() - start_time
+    avg_batch_time = sum(batch_times) / len(batch_times)
+    
+    metrics = {
+        'accuracy': accuracy,
+        'loss': avg_loss,
+        'per_class_accuracies': per_class_accuracies,
+        'total_samples': total,
+        'correct_samples': correct,
+        'evaluation_time': eval_time,
+        'average_batch_time': avg_batch_time,
+        'batch_times': batch_times,
+    }
+
     logger.debug(f"Evaluation complete - Accuracy: {accuracy:.2f}%")
-    return accuracy
+    return metrics
 
 
 def evaluate_attack(
@@ -50,8 +92,8 @@ def evaluate_attack(
     poisoned_loader: DataLoader,
     clean_loader: DataLoader,
     device: torch.device,
-) -> Dict[str, float]:
-    """Evaluate attack effectiveness.
+) -> Dict[str, Any]:
+    """Evaluate attack effectiveness with detailed metrics.
 
     Args:
         model: Model to evaluate
@@ -62,20 +104,43 @@ def evaluate_attack(
     Returns:
         dict: Dictionary containing evaluation metrics
     """
+    start_time = time.time()
     model.eval()
+    
+    # Evaluate on clean and poisoned data
+    clean_metrics = evaluate_model(model, clean_loader, device)
+    poisoned_metrics = evaluate_model(model, poisoned_loader, device)
+    
+    # Calculate attack success metrics
+    attack_success_rate = clean_metrics['accuracy'] - poisoned_metrics['accuracy']
+    relative_success_rate = (attack_success_rate / clean_metrics['accuracy']) * 100 if clean_metrics['accuracy'] > 0 else 0
+    
     results = {
-        "clean_accuracy": evaluate_model(model, clean_loader, device),
-        "poisoned_accuracy": evaluate_model(model, poisoned_loader, device),
+        'clean_accuracy': clean_metrics['accuracy'],
+        'poisoned_accuracy': poisoned_metrics['accuracy'],
+        'attack_success_rate': attack_success_rate,
+        'relative_success_rate': relative_success_rate,
+        'clean_loss': clean_metrics['loss'],
+        'poisoned_loss': poisoned_metrics['loss'],
+        'clean_per_class_accuracies': clean_metrics['per_class_accuracies'],
+        'poisoned_per_class_accuracies': poisoned_metrics['per_class_accuracies'],
+        'evaluation_time': time.time() - start_time,
+        'clean_eval_time': clean_metrics['evaluation_time'],
+        'poisoned_eval_time': poisoned_metrics['evaluation_time'],
+        'clean_batch_stats': {
+            'avg_time': clean_metrics['average_batch_time'],
+            'total_samples': clean_metrics['total_samples'],
+        },
+        'poisoned_batch_stats': {
+            'avg_time': poisoned_metrics['average_batch_time'],
+            'total_samples': poisoned_metrics['total_samples'],
+        }
     }
-
-    # Calculate attack success rate (difference in accuracy)
-    results["attack_success_rate"] = (
-        results["clean_accuracy"] - results["poisoned_accuracy"]
-    )
 
     logger.info(f"Clean accuracy: {results['clean_accuracy']:.2f}%")
     logger.info(f"Poisoned accuracy: {results['poisoned_accuracy']:.2f}%")
     logger.info(f"Attack success rate: {results['attack_success_rate']:.2f}%")
+    logger.info(f"Relative success rate: {results['relative_success_rate']:.2f}%")
 
     return results
 

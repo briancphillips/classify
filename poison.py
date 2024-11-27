@@ -12,6 +12,7 @@ from config.types import PoisonType
 from config.dataclasses import PoisonConfig
 from experiment import PoisonExperiment
 from utils.device import get_device
+from utils.export import export_results
 from utils.logging import setup_logging, get_logger
 
 logger = get_logger(__name__)
@@ -212,6 +213,11 @@ def main():
     try:
         results = experiment.run()
         logger.info("Experiment completed successfully!")
+
+        # Export results to CSV
+        csv_filename = os.path.join(args.output_dir, f"{args.dataset}_{args.attack}_results.csv")
+        export_results(results, csv_filename)
+        logger.info(f"Results exported to {csv_filename}")
 
         # Log summary of results
         for result in results:

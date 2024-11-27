@@ -5,7 +5,8 @@ import os
 from typing import List, Optional
 from tqdm import tqdm
 import numpy as np
-
+import time
+from torch.optim import Adam
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
@@ -16,6 +17,66 @@ from .visualization import plot_results, plot_attack_comparison
 
 logger = get_logger(__name__)
 
+class Trainer:
+    def __init__(self, model, criterion, optimizer, device, config):
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.device = device
+        self.config = config
+        self.metrics = {
+            'train_losses': [],
+            'val_losses': [],
+            'train_accs': [],
+            'val_accs': [],
+            'training_time': 0,
+            'inference_time': 0,
+        }
+
+    def train_epoch(self, loader, epoch):
+        self.model.train()
+        total_loss = 0
+        total_correct = 0
+        for batch in loader:
+            inputs, labels = batch
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            self.optimizer.zero_grad()
+            outputs = self.model(inputs)
+            loss = self.criterion(outputs, labels)
+            loss.backward()
+            self.optimizer.step()
+            total_loss += loss.item()
+            _, predicted = torch.max(outputs, 1)
+            total_correct += (predicted == labels).sum().item()
+        accuracy = total_correct / len(loader.dataset)
+        self.metrics['train_losses'].append(total_loss / len(loader))
+        self.metrics['train_accs'].append(accuracy)
+        return {'train_loss': total_loss / len(loader), 'train_acc': accuracy}
+
+    def evaluate(self, loader, epoch):
+        self.model.eval()
+        total_loss = 0
+        total_correct = 0
+        with torch.no_grad():
+            for batch in loader:
+                inputs, labels = batch
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, labels)
+                total_loss += loss.item()
+                _, predicted = torch.max(outputs, 1)
+                total_correct += (predicted == labels).sum().item()
+        accuracy = total_correct / len(loader.dataset)
+        self.metrics['val_losses'].append(total_loss / len(loader))
+        self.metrics['val_accs'].append(accuracy)
+        return {'val_loss': total_loss / len(loader), 'val_acc': accuracy}
+
+    def get_metrics(self):
+        self.metrics['final_train_loss'] = self.metrics['train_losses'][-1]
+        self.metrics['final_test_loss'] = self.metrics['val_losses'][-1]
+        self.metrics['best_train_loss'] = min(self.metrics['train_losses'])
+        self.metrics['best_test_loss'] = min(self.metrics['val_losses'])
+        return self.metrics
 
 class PoisonExperiment:
     """Class to manage poisoning experiments."""
@@ -108,40 +169,64 @@ class PoisonExperiment:
             torch.cuda.manual_seed(42)
 
         results = []
+        experiment_start_time = time.time()
 
         # First train clean model
         logger.info("Training clean model...")
         clean_checkpoint_path = os.path.join(self.checkpoint_dir, "clean_model")
 
-        # Try to load clean model checkpoint
-        clean_epoch, clean_loss = train_model(
-            self.model,
-            self.train_loader,
-            val_loader=self.test_loader,
-            epochs=self.epochs,
+        # Create trainer with advanced configuration
+        trainer_config = {
+            'use_amp': True,
+            'use_swa': True,
+            'use_mixup': True,
+            'label_smoothing': 0.1,
+            'swa_start': self.epochs // 2,
+            'swa_lr': 0.05,
+            'mixup_epochs': 150,
+            'model_type': self.model.__class__.__name__,
+            'model_architecture': str(self.model),
+            'epochs': self.epochs,
+            'batch_size': self.batch_size,
+            'learning_rate': self.learning_rate,
+            'weight_decay': 0.0001,
+            'optimizer': 'Adam',
+        }
+        
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        optimizer = Adam(
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=0.0001
+        )
+        
+        trainer = Trainer(
+            model=self.model,
+            criterion=criterion,
+            optimizer=optimizer,
             device=self.device,
-            learning_rate=self.learning_rate,
-            checkpoint_dir=self.checkpoint_dir,
-            checkpoint_name="clean_model",
-            resume_training=True,
+            config=trainer_config
         )
 
-        # Evaluate clean model with single process
-        test_loader = DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True,
-            persistent_workers=False,
-        )
-        clean_accuracy = evaluate_model(self.model, test_loader, self.device)
-        logger.info(f"Clean model accuracy: {clean_accuracy:.2f}%")
+        # Train clean model
+        for epoch in range(self.epochs):
+            train_metrics = trainer.train_epoch(self.train_loader, epoch)
+            val_metrics = trainer.evaluate(self.test_loader, epoch)
+            logger.info(
+                f"Epoch {epoch+1}/{self.epochs} - "
+                f"Train Loss: {train_metrics['train_loss']:.4f} - "
+                f"Val Loss: {val_metrics['val_loss']:.4f} - "
+                f"Val Acc: {val_metrics['val_acc']:.2f}%"
+            )
+
+        # Get final training metrics
+        training_metrics = trainer.get_metrics()
 
         # Run each poisoning configuration
         for config in self.configs:
             logger.info(f"\nRunning experiment with config: {config}")
             checkpoint_name = f"poisoned_{config.poison_type.value}"
+            poison_start_time = time.time()
 
             try:
                 # Create attack instance
@@ -152,7 +237,7 @@ class PoisonExperiment:
                     self.train_dataset, self.model
                 )
 
-                # Create poisoned data loader with single process
+                # Create poisoned data loader
                 poisoned_loader = DataLoader(
                     poisoned_dataset,
                     batch_size=self.batch_size,
@@ -162,30 +247,87 @@ class PoisonExperiment:
                     persistent_workers=False,
                 )
 
-                # Train model on poisoned data with checkpoint resumption
-                train_model(
-                    self.model,
-                    poisoned_loader,
-                    val_loader=test_loader,  # Use single process test loader
-                    epochs=self.epochs,
+                # Train model on poisoned data
+                poisoned_trainer = Trainer(
+                    model=self.model,
+                    criterion=criterion,
+                    optimizer=optimizer,
                     device=self.device,
-                    learning_rate=self.learning_rate,
-                    checkpoint_dir=self.checkpoint_dir,
-                    checkpoint_name=checkpoint_name,
-                    resume_training=True,
+                    config=trainer_config
                 )
+
+                for epoch in range(self.epochs):
+                    train_metrics = poisoned_trainer.train_epoch(poisoned_loader, epoch)
+                    val_metrics = poisoned_trainer.evaluate(self.test_loader, epoch)
+                    logger.info(
+                        f"Epoch {epoch+1}/{self.epochs} - "
+                        f"Train Loss: {train_metrics['train_loss']:.4f} - "
+                        f"Val Loss: {val_metrics['val_loss']:.4f} - "
+                        f"Val Acc: {val_metrics['val_acc']:.2f}%"
+                    )
+
+                # Get final poisoned training metrics
+                poisoned_metrics = poisoned_trainer.get_metrics()
 
                 # Evaluate attack
                 attack_results = evaluate_attack(
                     self.model,
                     poisoned_loader,
-                    test_loader,  # Use single process test loader
+                    self.test_loader,
                     self.device,
                 )
-                result.poisoned_accuracy = attack_results["poisoned_accuracy"]
-                result.original_accuracy = attack_results["clean_accuracy"]
 
-                # Save results
+                # Collect all metrics
+                experiment_metrics = {
+                    # Configuration
+                    'config': {
+                        'model_type': trainer_config['model_type'],
+                        'model_architecture': trainer_config['model_architecture'],
+                        'poison_type': config.poison_type.value,
+                        'epochs': self.epochs,
+                        'batch_size': self.batch_size,
+                        'learning_rate': self.learning_rate,
+                        'weight_decay': trainer_config['weight_decay'],
+                        'optimizer': trainer_config['optimizer'],
+                        'num_classes': 100 if self.dataset_name.lower() == 'cifar100' else 43 if self.dataset_name.lower() == 'gtsrb' else 10,
+                    },
+                    
+                    # Dataset info
+                    'dataset': {
+                        'name': self.dataset_name,
+                        'train_size': len(self.train_dataset),
+                        'test_size': len(self.test_dataset),
+                        'subset_size': self.subset_size,
+                    },
+                    
+                    # Training metrics
+                    'clean_training': training_metrics,
+                    'poisoned_training': poisoned_metrics,
+                    
+                    # Attack metrics
+                    'original_accuracy': attack_results['clean_accuracy'],
+                    'poisoned_accuracy': attack_results['poisoned_accuracy'],
+                    'poison_success_rate': attack_results['attack_success_rate'],
+                    'relative_success_rate': attack_results['relative_success_rate'],
+                    
+                    # Loss metrics
+                    'final_train_loss': poisoned_metrics['final_train_loss'],
+                    'final_test_loss': poisoned_metrics['final_test_loss'],
+                    'best_train_loss': poisoned_metrics['best_train_loss'],
+                    'best_test_loss': poisoned_metrics['best_test_loss'],
+                    
+                    # Timing metrics
+                    'training_time': poisoned_metrics['training_time'],
+                    'inference_time': poisoned_metrics['inference_time'],
+                    'total_time': time.time() - poison_start_time,
+                    
+                    # Per-class metrics
+                    'clean_per_class_accuracies': attack_results['clean_per_class_accuracies'],
+                    'poisoned_per_class_accuracies': attack_results['poisoned_per_class_accuracies'],
+                }
+
+                # Update result object with metrics
+                result.metrics = experiment_metrics
                 result.save(self.output_dir)
                 results.append(result)
 
@@ -202,4 +344,5 @@ class PoisonExperiment:
             plot_results(results, self.output_dir)
             plot_attack_comparison(results, self.output_dir)
 
+        logger.info(f"Total experiment time: {time.time() - experiment_start_time:.2f}s")
         return results

@@ -13,6 +13,8 @@ from tqdm import tqdm
 from typing import Dict, Any, Optional, Tuple
 from contextlib import nullcontext
 import torch.nn.functional as F
+from collections import defaultdict
+import time
 
 from utils.logging import get_logger
 from utils.checkpoints import save_checkpoint, load_checkpoint
@@ -53,6 +55,20 @@ class Trainer:
         self.use_mixup = config.get('use_mixup', True)
         self.label_smoothing = config.get('label_smoothing', 0.1)
         
+        # Track metrics
+        self.metrics = {
+            'train_loss': [],
+            'train_acc': [],
+            'val_loss': [],
+            'val_acc': [],
+            'best_train_loss': float('inf'),
+            'best_test_loss': float('inf'),
+            'per_class_accuracies': {},
+            'training_time': 0,
+            'inference_time': 0,
+            'total_time': 0,
+        }
+        
         # Setup mixed precision training
         self.scaler = GradScaler() if self.use_amp else None
         
@@ -76,10 +92,13 @@ class Trainer:
         epoch: int
     ) -> Dict[str, float]:
         """Train for one epoch."""
+        start_time = time.time()
         self.model.train()
         total_loss = 0
         correct = 0
         total = 0
+        per_class_correct = defaultdict(int)
+        per_class_total = defaultdict(int)
         
         progress_bar = tqdm(train_loader, desc=f'Epoch {epoch}')
         for batch_idx, (inputs, targets) in enumerate(progress_bar):
@@ -111,11 +130,18 @@ class Trainer:
             total_loss += loss.item()
             _, predicted = outputs.max(1)
             total += targets.size(0)
+            
             if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
                 correct += (lam * predicted.eq(targets_a).sum().float()
                           + (1 - lam) * predicted.eq(targets_b).sum().float())
             else:
                 correct += predicted.eq(targets).sum().item()
+                # Update per-class accuracies
+                for target, pred in zip(targets, predicted):
+                    target_class = target.item()
+                    per_class_total[target_class] += 1
+                    if pred == target:
+                        per_class_correct[target_class] += 1
             
             # Update progress bar
             progress_bar.set_postfix({
@@ -123,10 +149,32 @@ class Trainer:
                 'Acc': f'{100.*correct/total:.2f}%'
             })
         
-        metrics = {
-            'train_loss': total_loss / len(train_loader),
-            'train_acc': 100. * correct / total
+        # Calculate per-class accuracies
+        per_class_accuracies = {
+            cls: 100. * per_class_correct[cls] / per_class_total[cls]
+            for cls in per_class_total.keys()
         }
+        
+        epoch_time = time.time() - start_time
+        self.metrics['training_time'] += epoch_time
+        self.metrics['total_time'] += epoch_time
+        
+        train_loss = total_loss / len(train_loader)
+        train_acc = 100. * correct / total
+        
+        # Update best metrics
+        if train_loss < self.metrics['best_train_loss']:
+            self.metrics['best_train_loss'] = train_loss
+        
+        metrics = {
+            'train_loss': train_loss,
+            'train_acc': train_acc,
+            'per_class_accuracies': per_class_accuracies,
+            'epoch_time': epoch_time
+        }
+        
+        self.metrics['train_loss'].append(train_loss)
+        self.metrics['train_acc'].append(train_acc)
         
         # Update SWA if enabled
         if self.use_swa and epoch >= self.swa_start:
@@ -141,12 +189,15 @@ class Trainer:
         epoch: int
     ) -> Dict[str, float]:
         """Evaluate the model."""
+        start_time = time.time()
         model_to_eval = self.swa_model if self.use_swa and epoch >= self.swa_start else self.model
         model_to_eval.eval()
         
         total_loss = 0
         correct = 0
         total = 0
+        per_class_correct = defaultdict(int)
+        per_class_total = defaultdict(int)
         
         with torch.no_grad():
             for inputs, targets in val_loader:
@@ -158,41 +209,62 @@ class Trainer:
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
+                
+                # Update per-class accuracies
+                for target, pred in zip(targets, predicted):
+                    target_class = target.item()
+                    per_class_total[target_class] += 1
+                    if pred == target:
+                        per_class_correct[target_class] += 1
+        
+        # Calculate per-class accuracies
+        per_class_accuracies = {
+            cls: 100. * per_class_correct[cls] / per_class_total[cls]
+            for cls in per_class_total.keys()
+        }
+        
+        eval_time = time.time() - start_time
+        self.metrics['inference_time'] += eval_time
+        self.metrics['total_time'] += eval_time
+        
+        val_loss = total_loss / len(val_loader)
+        val_acc = 100. * correct / total
+        
+        # Update best metrics
+        if val_loss < self.metrics['best_test_loss']:
+            self.metrics['best_test_loss'] = val_loss
+        
+        self.metrics['val_loss'].append(val_loss)
+        self.metrics['val_acc'].append(val_acc)
         
         return {
-            'val_loss': total_loss / len(val_loader),
-            'val_acc': 100. * correct / total
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'per_class_accuracies': per_class_accuracies,
+            'eval_time': eval_time
         }
     
-    def _mixup_data(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        alpha: float = 1.0
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
-        """Perform mixup on the input data and labels."""
-        if alpha > 0:
-            lam = np.random.beta(alpha, alpha)
-        else:
-            lam = 1
-        
-        batch_size = x.size()[0]
-        index = torch.randperm(batch_size).to(self.device)
-        
-        mixed_x = lam * x + (1 - lam) * x[index]
-        y_a, y_b = y, y[index]
-        return mixed_x, y_a, y_b, lam
-    
-    def _mixup_criterion(
-        self,
-        pred: torch.Tensor,
-        y_a: torch.Tensor,
-        y_b: torch.Tensor,
-        lam: float
-    ) -> torch.Tensor:
-        """Compute the mixup loss."""
-        return lam * self.criterion(pred, y_a) + (1 - lam) * self.criterion(pred, y_b)
-    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get all collected metrics."""
+        return {
+            'best_train_loss': self.metrics['best_train_loss'],
+            'best_test_loss': self.metrics['best_test_loss'],
+            'final_train_loss': self.metrics['train_loss'][-1] if self.metrics['train_loss'] else None,
+            'final_test_loss': self.metrics['val_loss'][-1] if self.metrics['val_loss'] else None,
+            'per_class_accuracies': self.metrics['per_class_accuracies'],
+            'training_time': self.metrics['training_time'],
+            'inference_time': self.metrics['inference_time'],
+            'total_time': self.metrics['total_time'],
+            'train_history': {
+                'loss': self.metrics['train_loss'],
+                'acc': self.metrics['train_acc']
+            },
+            'val_history': {
+                'loss': self.metrics['val_loss'],
+                'acc': self.metrics['val_acc']
+            }
+        }
+
     def save_state(
         self,
         epoch: int,
