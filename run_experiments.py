@@ -11,6 +11,7 @@ from typing import List, Dict, Any
 import os
 import sys
 from tqdm import tqdm
+import torch
 
 from utils.logging import get_logger
 from utils.error_logging import get_error_logger
@@ -36,6 +37,15 @@ class ExperimentManager:
                 count += len(attacks)
         return count
     
+    def _get_device_info(self) -> str:
+        """Get information about available compute devices."""
+        if torch.cuda.is_available():
+            return f"GPU ({torch.cuda.get_device_name(0)})"
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return "Apple Silicon GPU (MPS)"
+        else:
+            return "CPU"
+        
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file."""
         with open(self.config_path) as f:
@@ -94,6 +104,12 @@ class ExperimentManager:
         """Run all experiments defined in the configuration."""
         all_results_files = []
         completed_experiments = 0
+        
+        # Print system information
+        device_info = self._get_device_info()
+        print(f"\nSystem Information:", flush=True)
+        print(f"Device: {device_info}", flush=True)
+        print(f"Number of workers: {self.config['execution']['max_workers']}", flush=True)
         
         print(f"\nStarting {self.total_experiments} experiments across {len(self.config['experiment_groups'])} groups", flush=True)
         
