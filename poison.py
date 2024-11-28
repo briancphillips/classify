@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from attacks.pgd import PGDPoisonAttack
 from attacks.gradient_ascent import GradientAscentAttack
-from attacks.label_flip import LabelFlipPoisonAttack
+from attacks.label_flip import LabelFlipAttack
 
 logger = get_logger(__name__)
 error_logger = get_error_logger()
@@ -159,7 +159,7 @@ def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"
         source_class=0,  # Only used for source_target mode
         target_class=1   # Only used for target modes
     )
-    attack = LabelFlipPoisonAttack(config)
+    attack = LabelFlipAttack(config)
     return attack.poison_dataset(train_loader.dataset, model)
 
 if __name__ == "__main__":
