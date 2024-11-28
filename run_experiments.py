@@ -53,10 +53,20 @@ class ExperimentManager:
     
     def _build_command(self, experiment: Dict[str, Any], attack: str) -> List[str]:
         """Build command for a single experiment."""
+        # Map attack names to PoisonType values
+        attack_map = {
+            "pgd": "pgd",
+            "ga": "gradient_ascent",
+            "random": "label_flip_random_random",
+            "target": "label_flip_random_target",
+            "source": "label_flip_source_target"
+        }
+        
+        mapped_attack = attack_map.get(attack, attack)
         cmd = [
             "python", "poison.py",
             "--dataset", experiment["dataset"],
-            "--attack", attack,
+            "--attack", mapped_attack,
             "--output-dir", str(self.results_dir),
             "--poison-ratio", str(experiment.get("poison_ratio", 0.1))
         ]

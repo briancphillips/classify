@@ -508,3 +508,46 @@ class PoisonExperiment:
 
         logger.info(f"Total experiment time: {time.time() - time.time():.2f}s")
         return results
+
+    def run(self):
+        """Run the poisoning experiment."""
+        logger.info("Starting poisoning experiment")
+        
+        # Train model on clean data first
+        logger.info("Training model on clean data")
+        self._train_model()
+        clean_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Apply poisoning
+        logger.info(f"Applying {self.configs[0].poison_type} poisoning")
+        if self.configs[0].poison_type == PoisonType.PGD:
+            self._apply_pgd_attack()
+        elif self.configs[0].poison_type == PoisonType.GRADIENT_ASCENT:
+            self._apply_gradient_ascent()
+        else:
+            self._apply_label_flip()
+            
+        # Train model on poisoned data
+        logger.info("Training model on poisoned data")
+        self._train_model()
+        poisoned_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Save results
+        result = PoisonResult(
+            config=self.configs[0],
+            dataset_name=self.dataset_name,
+            poisoned_indices=self.poisoned_indices,
+            poison_success_rate=self.poison_success_rate,
+            original_accuracy=clean_accuracy,
+            poisoned_accuracy=poisoned_accuracy
+        )
+        result.save(self.output_dir)
+        logger.info(f"Experiment complete. Results saved to {self.output_dir}")
