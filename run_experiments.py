@@ -82,11 +82,14 @@ class ExperimentManager:
     
     def _run_single_experiment(self, cmd: List[str], experiment_name: str, attack: str) -> str:
         """Run a single experiment and return its results file path."""
-        output_file = self.results_dir / f"{experiment_name}_{attack}_{self.timestamp}.csv"
+        # Build the expected output filename based on dataset and attack
+        dataset = next(arg for i, arg in enumerate(cmd) if arg == "--dataset" and i < len(cmd) - 1)
+        output_file = self.results_dir / f"{dataset}_{attack}_results.csv"
         
         try:
             logger.info(f"Running experiment: {' '.join(cmd)}")
             logger.info(f"Results will be saved to: {output_file}")
+            
             # Add output directory to command
             cmd.extend(["--output-dir", str(self.results_dir)])
             
@@ -101,9 +104,16 @@ class ExperimentManager:
             )
             
             if result.returncode == 0:
-                # The output file should be directly in the results directory
-                return str(output_file)
-                
+                # Verify the file exists
+                if output_file.exists():
+                    logger.info(f"Result file created successfully: {output_file}")
+                    return str(output_file)
+                else:
+                    logger.error(f"Result file not found after experiment: {output_file}")
+                    logger.error("Command output:")
+                    logger.error(result.stdout)
+                    logger.error(result.stderr)
+                    return None
         except subprocess.CalledProcessError as e:
             error_logger.log_error(e, f"Experiment failed: {experiment_name}_{attack}")
             logger.error(f"Experiment failed: {experiment_name}_{attack}")
@@ -186,6 +196,9 @@ class ExperimentManager:
             return
         
         try:
+            # Filter out None values from failed experiments
+            result_files = [f for f in result_files if f is not None]
+            
             logger.info(f"Found {len(result_files)} result files to consolidate")
             for file in result_files:
                 logger.info(f"Processing file: {file}")
