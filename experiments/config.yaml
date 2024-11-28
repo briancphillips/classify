@@ -3,10 +3,10 @@ defaults:
   batch_size: 128
   num_workers: 4
   pin_memory: true
-  use_amp: true
-  use_swa: false  # Disable SWA as it's not in verified config
-  use_mixup: false  # Disable mixup as it's not in verified config
-  label_smoothing: 0.0  # Disable label smoothing as it's not in verified config
+  use_amp: false  # Not in verified config
+  use_swa: false  # Not in verified config
+  use_mixup: false  # Not in verified config
+  label_smoothing: 0.0  # Not in verified config
   
   # Optimizer settings
   optimizer: SGD
@@ -16,15 +16,16 @@ defaults:
   grad_clip: 1.0
   
   # Learning rate schedule
-  lr_schedule: [60, 120, 160]
+  lr_schedule: [60, 120, 160]  # Verified schedule
   lr_factor: 0.2
   
   # Data augmentation
   random_crop: true
+  random_crop_padding: 4  # Verified padding value
   random_horizontal_flip: true
   normalize: true
-  normalize_mean: [0.5071, 0.4867, 0.4408]  # CIFAR-100 specific means
-  normalize_std: [0.2675, 0.2565, 0.2761]   # CIFAR-100 specific stds
+  normalize_mean: [0.5071, 0.4867, 0.4408]  # Verified CIFAR-100 means
+  normalize_std: [0.2675, 0.2565, 0.2761]   # Verified CIFAR-100 stds
   cutout: false  # Not in verified config
   cutout_length: 8
 
@@ -42,6 +43,9 @@ dataset_defaults:
     mixup_alpha: 0.2
     label_smoothing: 0.0
     model: wrn-28-10
+    depth: 28
+    widen_factor: 10
+    dropout_rate: 0.3  # Verified dropout rate
     num_classes: 100
     
   gtsrb:

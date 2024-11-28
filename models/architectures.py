@@ -1,76 +1,64 @@
 import torch
 import torch.nn as nn
-import torchvision
+import torch.nn.functional as F
 from torchvision import models
 from utils.logging import get_logger
-import torch.nn.functional as F
 
 logger = get_logger(__name__)
 
+class WideResNetBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1, dropout_rate=0.3):
+        super(WideResNetBlock, self).__init__()
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
+
+    def forward(self, x):
+        out = self.conv1(F.relu(self.bn1(x)))
+        out = self.conv2(F.relu(self.bn2(self.dropout(out))))
+        out += self.shortcut(x)
+        return out
 
 class WideResNet(nn.Module):
-    """Wide ResNet implementation specifically designed for CIFAR100."""
-    
-    def __init__(self, depth=40, widen_factor=2, dropout_rate=0.0, num_classes=100):
+    def __init__(self, depth=28, widen_factor=10, dropout_rate=0.3, num_classes=100):
         super(WideResNet, self).__init__()
-        
-        nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
-        assert((depth - 4) % 6 == 0)
-        n = (depth - 4) // 6
-        
-        block = BasicBlock
-        
-        # 1st conv before any network block
-        self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1, padding=1, bias=False)
-        
-        # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropout_rate)
-        
-        # 2nd block
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropout_rate)
-        
-        # 3rd block
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropout_rate)
-        
-        # global average pooling and classifier
-        self.bn1 = nn.BatchNorm2d(nChannels[3])
-        self.relu = nn.ReLU(inplace=True)
-        self.fc = nn.Linear(nChannels[3], num_classes)
-        
-        self.nChannels = nChannels[3]
+        assert (depth - 4) % 6 == 0, "Depth must be 6n + 4"
+        num_blocks = (depth - 4) // 6
+        self.in_channels = 16
 
-        # Initialize weights with more stable initialization
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # Use Xavier/Glorot initialization for conv layers
-                nn.init.xavier_normal_(m.weight, gain=1.0)
-            elif isinstance(m, nn.BatchNorm2d):
-                # Initialize BatchNorm with slightly positive bias
-                nn.init.constant_(m.weight, 1.0)
-                nn.init.constant_(m.bias, 0.1)
-            elif isinstance(m, nn.Linear):
-                # Use Xavier/Glorot initialization for fully connected layers
-                nn.init.xavier_normal_(m.weight, gain=1.0)
-                nn.init.constant_(m.bias, 0.1)
-    
-    def forward(self, x):
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.layer1 = self._make_layer(16 * widen_factor, num_blocks, stride=1, dropout_rate=dropout_rate)
+        self.layer2 = self._make_layer(32 * widen_factor, num_blocks, stride=2, dropout_rate=dropout_rate)
+        self.layer3 = self._make_layer(64 * widen_factor, num_blocks, stride=2, dropout_rate=dropout_rate)
+        self.bn = nn.BatchNorm2d(64 * widen_factor)
+        self.fc = nn.Linear(64 * widen_factor, num_classes)
+
+    def _make_layer(self, out_channels, num_blocks, stride, dropout_rate):
+        layers = [WideResNetBlock(self.in_channels, out_channels, stride, dropout_rate)]
+        self.in_channels = out_channels
+        for _ in range(1, num_blocks):
+            layers.append(WideResNetBlock(out_channels, out_channels, dropout_rate=dropout_rate))
+        return nn.Sequential(*layers)
+
+    def forward(self, x, extract_features=False):
         out = self.conv1(x)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = F.relu(self.bn(out))
         out = F.avg_pool2d(out, 8)
-        out = out.view(-1, self.nChannels)
-        return self.fc(out)
+        features = out.view(out.size(0), -1)
+        if extract_features:
+            return features
+        return self.fc(features)
 
     def extract_features(self, x):
-        out = self.conv1(x)
-        out = self.block1(out)
-        out = self.block2(out)
-        out = self.block3(out)
-        out = self.relu(self.bn1(out))
-        out = F.avg_pool2d(out, 8)
-        return out.view(-1, self.nChannels)
+        return self.forward(x, extract_features=True)
 
 
 class BasicBlock(nn.Module):
