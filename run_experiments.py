@@ -75,25 +75,53 @@ class ExperimentManager:
             self.results_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created output directory: {self.results_dir}")
             
-            # Run command
-            result = subprocess.run(
+            # Run command and capture output in real-time
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                check=False
+                bufsize=1,
+                universal_newlines=True
             )
             
-            # Log output
-            if result.stdout:
-                logger.info(f"Command stdout:\n{result.stdout}")
-            if result.stderr:
-                logger.error(f"Command stderr:\n{result.stderr}")
+            # Read output in real-time
+            stdout_lines = []
+            stderr_lines = []
+            
+            while True:
+                stdout_line = process.stdout.readline()
+                stderr_line = process.stderr.readline()
+                
+                if stdout_line:
+                    logger.info(stdout_line.strip())
+                    stdout_lines.append(stdout_line)
+                if stderr_line:
+                    logger.error(stderr_line.strip())
+                    stderr_lines.append(stderr_line)
+                    
+                if process.poll() is not None:
+                    break
+            
+            # Get remaining output
+            stdout, stderr = process.communicate()
+            if stdout:
+                logger.info(stdout.strip())
+                stdout_lines.append(stdout)
+            if stderr:
+                logger.error(stderr.strip())
+                stderr_lines.append(stderr)
             
             # Check result
-            if result.returncode != 0:
-                error_msg = f"Command failed with return code {result.returncode}"
+            if process.returncode != 0:
+                error_msg = (
+                    f"Command failed with return code {process.returncode}\n"
+                    f"Command: {' '.join(cmd)}\n"
+                    f"Stdout:\n{''.join(stdout_lines)}\n"
+                    f"Stderr:\n{''.join(stderr_lines)}"
+                )
                 error_logger.log_error_msg(error_msg)
-                raise subprocess.CalledProcessError(result.returncode, cmd)
+                raise subprocess.CalledProcessError(process.returncode, cmd)
             
         except Exception as e:
             error_logger.log_error(e, f"Experiment failed: {experiment['name']}")
