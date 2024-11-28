@@ -178,6 +178,28 @@ class PoisonExperiment:
         logger.info("Training clean neural network model...")
         clean_checkpoint_path = os.path.join(self.checkpoint_dir, "clean_model")
 
+        # Try to load existing checkpoint
+        start_epoch = 0
+        best_acc = 0.0
+        if os.path.exists(clean_checkpoint_path + "_best.pth.tar"):
+            logger.info("Found existing checkpoint, attempting to load...")
+            try:
+                start_epoch, best_acc = load_checkpoint(
+                    model=self.model,
+                    optimizer=Adam(
+                        self.model.parameters(),
+                        lr=self.learning_rate,
+                        weight_decay=0.0001
+                    ),
+                    checkpoint_dir=self.checkpoint_dir,
+                    name="clean_model",
+                    device=self.device,
+                    load_best=True
+                )
+                logger.info(f"Loaded checkpoint from epoch {start_epoch} with best accuracy {best_acc:.2f}%")
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint: {str(e)}")
+
         # Create trainer with advanced configuration
         trainer_config = {
             'use_amp': True,
@@ -212,7 +234,7 @@ class PoisonExperiment:
         )
 
         # Train clean model
-        for epoch in range(self.epochs):
+        for epoch in range(start_epoch, self.epochs):
             train_metrics = trainer.train_epoch(self.train_loader, epoch)
             val_metrics = trainer.evaluate(self.test_loader, epoch)
             logger.info(
@@ -220,6 +242,25 @@ class PoisonExperiment:
                 f"Train Loss: {train_metrics['train_loss']:.4f} - "
                 f"Val Loss: {val_metrics['val_loss']:.4f} - "
                 f"Val Acc: {val_metrics['val_acc']:.2f}%"
+            )
+            
+            # Save checkpoint
+            is_best = val_metrics['val_acc'] > best_acc
+            if is_best:
+                best_acc = val_metrics['val_acc']
+            
+            save_checkpoint(
+                state={
+                    'epoch': epoch,
+                    'state_dict': self.model.state_dict(),
+                    'best_acc': best_acc,
+                    'optimizer': optimizer.state_dict(),
+                    'swa_state_dict': trainer.swa_model.state_dict() if trainer.use_swa else None,
+                    'metrics': trainer.get_metrics()
+                },
+                is_best=is_best,
+                checkpoint_dir=self.checkpoint_dir,
+                filename=f"clean_model_latest.pth.tar"
             )
 
         # Get final training metrics
