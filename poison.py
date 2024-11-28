@@ -95,27 +95,16 @@ def run_poison_experiment(
         
         # Run attack
         results = {}
-        attack_map = {
-            "pgd": "pgd",
-            "gradient_ascent": "gradient_ascent",
-            "label_flip_random_random": "label_flip_random_random",
-            "label_flip_random_target": "label_flip_random_target",
-            "label_flip_source_target": "label_flip_source_target"
-        }
-        if attack in attack_map:
-            attack_name = attack_map[attack]
-            if attack_name == "pgd":
-                results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
-            elif attack_name == "gradient_ascent":
-                results = run_gradient_ascent(model, train_loader, test_loader, poison_ratio)
-            elif attack_name == "label_flip_random_random":
-                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random")
-            elif attack_name == "label_flip_random_target":
-                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="target")
-            elif attack_name == "label_flip_source_target":
-                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="source_target")
-            else:
-                raise ValueError(f"Unknown attack type: {attack}")
+        if attack == "pgd":
+            results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
+        elif attack == "ga":
+            results = run_gradient_ascent(model, train_loader, test_loader, poison_ratio)
+        elif attack == "label_flip":
+            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random")
+        elif attack == "label_flip_target":
+            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="target")
+        elif attack == "label_flip_source":
+            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="source_target")
         else:
             raise ValueError(f"Unknown attack type: {attack}")
             
