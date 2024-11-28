@@ -63,53 +63,40 @@ class ExperimentManager:
         logger.info(f"Built command: {' '.join(cmd)}")
         return cmd
     
-    def _run_single_experiment(self, cmd: List[str], experiment_name: str, attack: str) -> str:
-        """Run a single experiment and return its results file path."""
-        # Build the expected output filename based on dataset and attack
+    def _run_single_experiment(self, experiment: Dict[str, Any], attack: str, output_file: Path) -> None:
+        """Run a single experiment."""
         try:
-            dataset_idx = cmd.index("--dataset") + 1
-            dataset = cmd[dataset_idx] if dataset_idx < len(cmd) else None
-            if not dataset:
-                logger.error("Could not find dataset argument in command")
-                return None
-        except ValueError:
-            logger.error("--dataset not found in command")
-            return None
-            
-        output_file = self.results_dir / f"{dataset}_{attack}_results.csv"
-        
-        try:
+            # Build command
+            cmd = self._build_command(experiment, attack)
             logger.info(f"Running experiment: {' '.join(cmd)}")
             logger.info(f"Results will be saved to: {output_file}")
             
+            # Create output directory
+            self.results_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created output directory: {self.results_dir}")
+            
+            # Run command
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=False
             )
             
-            if result.returncode == 0:
-                # Verify the file exists
-                if output_file.exists():
-                    logger.info(f"Result file created successfully: {output_file}")
-                    return str(output_file)
-                else:
-                    logger.error(f"Result file not found after experiment: {output_file}")
-                    logger.error("Command output:")
-                    logger.error(f"stdout: {result.stdout}")
-                    logger.error(f"stderr: {result.stderr}")
-                    return None
-        except subprocess.CalledProcessError as e:
-            error_logger.log_error(e, f"Experiment failed: {experiment_name}_{attack}")
-            logger.error(f"Experiment failed: {experiment_name}_{attack}")
-            logger.error(f"Command: {' '.join(cmd)}")
-            logger.error(f"Return code: {e.returncode}")
-            logger.error(f"Stdout: {e.stdout}")
-            logger.error(f"Stderr: {e.stderr}")
-            return None
+            # Log output
+            if result.stdout:
+                logger.info(f"Command stdout:\n{result.stdout}")
+            if result.stderr:
+                error_logger.error(f"Command stderr:\n{result.stderr}")
             
-        return str(output_file)
+            # Check result
+            if result.returncode != 0:
+                error_logger.error(f"Command failed with return code {result.returncode}")
+                raise subprocess.CalledProcessError(result.returncode, cmd)
+            
+        except Exception as e:
+            error_logger.exception(f"Experiment failed: {experiment['name']} - {str(e)}")
+            raise
     
     def run_experiments(self):
         """Run all experiments defined in the configuration."""
@@ -139,11 +126,12 @@ class ExperimentManager:
                         attacks = experiment.get('attacks', [experiment.get('attack')])
                         for attack in attacks:
                             cmd = self._build_command(experiment, attack)
+                            output_file = self.results_dir / f"{experiment['dataset']}_{attack}_results.csv"
                             future = executor.submit(
                                 self._run_single_experiment,
-                                cmd,
-                                experiment['name'],
-                                attack
+                                experiment,
+                                attack,
+                                output_file
                             )
                             future_to_exp[future] = (experiment['name'], attack)
                             pbar.update(1)
@@ -153,37 +141,31 @@ class ExperimentManager:
             for future in concurrent.futures.as_completed(future_to_exp):
                 exp_name, attack = future_to_exp[future]
                 try:
-                    result_file = future.result()
-                    if result_file:
-                        all_results_files.append(result_file)
-                        completed_experiments += 1
-                        completion_percentage = (completed_experiments/self.total_experiments)*100
-                        print(f"Completed {exp_name}_{attack} ({completed_experiments}/{self.total_experiments} - {completion_percentage:.1f}%)", flush=True)
+                    future.result()
+                    completed_experiments += 1
+                    completion_percentage = (completed_experiments/self.total_experiments)*100
+                    print(f"Completed {exp_name}_{attack} ({completed_experiments}/{self.total_experiments} - {completion_percentage:.1f}%)", flush=True)
                 except Exception as e:
                     error_logger.log_error(e, f"Error collecting results for {exp_name}_{attack}")
                     print(f"Failed: {exp_name}_{attack} - {str(e)}", flush=True)
         
         # Consolidate results with progress bar
-        print(f"\nConsolidating {len(all_results_files)} result files...", flush=True)
-        self._consolidate_results(all_results_files)
+        print(f"\nConsolidating results...", flush=True)
+        self._consolidate_results()
         
         # Print summary
         print(f"\nExperiment Summary:", flush=True)
         print(f"Total experiments: {self.total_experiments}", flush=True)
         print(f"Successful experiments: {completed_experiments}", flush=True)
         print(f"Failed experiments: {self.total_experiments - completed_experiments}", flush=True)
-        if all_results_files:
+        if self.config['output']['consolidated_file']:
             print(f"Results saved to: {self.results_dir / self.config['output']['consolidated_file']}", flush=True)
     
-    def _consolidate_results(self, result_files: List[str]):
+    def _consolidate_results(self):
         """Consolidate all experiment results into a single CSV file."""
-        if not result_files:
-            logger.warning("No results files to consolidate")
-            return
-        
         try:
-            # Filter out None values from failed experiments
-            result_files = [f for f in result_files if f is not None]
+            # Find all result files
+            result_files = [f for f in self.results_dir.glob("*.csv") if f.is_file()]
             
             logger.info(f"Found {len(result_files)} result files to consolidate")
             for file in result_files:

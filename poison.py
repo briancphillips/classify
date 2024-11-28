@@ -35,22 +35,49 @@ def main():
     setup_logging()
     
     try:
+        # Parse command line arguments
         args = parse_args()
+        logger.info(f"Running with args: {args}")
+        
+        # Load config file
+        try:
+            with open(args.config) as f:
+                config = yaml.safe_load(f)
+            logger.info(f"Loaded config from {args.config}")
+        except Exception as e:
+            error_logger.error(f"Failed to load config from {args.config}: {str(e)}")
+            raise
         
         # Create poison config
-        poison_config = PoisonConfig(
-            attack_type=PoisonType(args.attack),
-            output_dir=args.output_dir
-        )
+        try:
+            poison_config = PoisonConfig(
+                attack_type=PoisonType(args.attack),
+                output_dir=args.output_dir
+            )
+            logger.info(f"Created poison config: {poison_config}")
+        except Exception as e:
+            error_logger.error(f"Failed to create poison config: {str(e)}")
+            raise
         
-        # Create and run experiment
-        experiment = PoisonExperiment(
-            dataset_name=args.dataset,
-            configs=[poison_config],
-            config_path=args.config,
-            output_dir=args.output_dir
-        )
-        experiment.run()
+        # Create experiment
+        try:
+            experiment = PoisonExperiment(
+                dataset_name=args.dataset,
+                configs=[poison_config],
+                config_path=args.config,
+                output_dir=args.output_dir
+            )
+            logger.info("Created experiment")
+        except Exception as e:
+            error_logger.error(f"Failed to create experiment: {str(e)}")
+            raise
+        
+        # Run experiment
+        try:
+            experiment.run()
+        except Exception as e:
+            error_logger.error(f"Failed to run experiment: {str(e)}")
+            raise
         
     except Exception as e:
         error_logger.exception(f"Experiment failed: {str(e)}")
