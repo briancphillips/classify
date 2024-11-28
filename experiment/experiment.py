@@ -85,29 +85,32 @@ class Trainer:
         return lam * self.criterion(pred, y_a) + (1 - lam) * self.criterion(pred, y_b)
 
     def train_epoch(self, loader, epoch):
+        """Train one epoch."""
         self.model.train()
         total_loss = 0
-        total_correct = 0
+        correct = 0
         total = 0
+        batch_count = len(loader)
         
-        for batch in tqdm(loader, desc=f'Epoch {epoch+1}', leave=False):
-            inputs, labels = batch
-            inputs, labels = inputs.to(self.device), labels.to(self.device)
+        for batch_idx, (inputs, targets) in enumerate(loader, 1):
+            # Move to device and get batch size
+            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            batch_size = inputs.size(0)
             
-            # Apply mixup if enabled and within mixup epochs
-            if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
-                inputs, labels_a, labels_b, lam = self.mixup_data(inputs, labels)
+            # Mixup
+            if self.use_mixup:
+                inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
                 
-            self.optimizer.zero_grad()
-            
-            # Mixed precision training
-            with autocast() if self.use_amp else nullcontext():
+            # Forward pass
+            with autocast(enabled=self.use_amp):
                 outputs = self.model(inputs)
-                if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
-                    loss = self.mixup_criterion(outputs, labels_a, labels_b, lam)
+                if self.use_mixup:
+                    loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
                 else:
-                    loss = self.criterion(outputs, labels)
+                    loss = self.criterion(outputs, targets)
             
+            # Backward pass
+            self.optimizer.zero_grad()
             if self.use_amp:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
@@ -116,54 +119,72 @@ class Trainer:
                 loss.backward()
                 self.optimizer.step()
             
-            total_loss += loss.item()
+            # Update metrics
+            total_loss += loss.item() * batch_size
+            _, predicted = outputs.max(1)
+            total += batch_size
+            if self.use_mixup:
+                correct += (lam * predicted.eq(targets_a).sum().item()
+                          + (1 - lam) * predicted.eq(targets_b).sum().item())
+            else:
+                correct += predicted.eq(targets).sum().item()
             
-            # Calculate accuracy
-            if not self.use_mixup or epoch >= self.config.get('mixup_epochs', 150):
-                _, predicted = outputs.max(1)
-                total += labels.size(0)
-                total_correct += predicted.eq(labels).sum().item()
-            
-        # Update SWA model if enabled
-        if self.use_swa and epoch >= self.swa_start:
-            self.swa_model.update_parameters(self.model)
-            self.swa_scheduler.step()
+            # Log progress
+            if batch_idx % max(1, batch_count // 10) == 0:
+                logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
+                          f'Loss: {loss.item():.4f} '
+                          f'Acc: {100. * correct/total:.2f}%')
         
-        accuracy = total_correct / total if total > 0 else 0
-        avg_loss = total_loss / len(loader)
+        # Calculate epoch metrics
+        avg_loss = total_loss / total
+        accuracy = 100. * correct / total
         
+        # Update metrics history
         self.metrics['train_losses'].append(avg_loss)
         self.metrics['train_accs'].append(accuracy)
         
-        return {'train_loss': avg_loss, 'train_acc': accuracy}
+        return avg_loss, accuracy
 
     def evaluate(self, loader, epoch):
-        # Use SWA model for evaluation if enabled and after SWA start epoch
-        model_to_eval = self.swa_model if self.use_swa and epoch >= self.swa_start else self.model
-        model_to_eval.eval()
-        
+        """Evaluate the model."""
+        self.model.eval()
         total_loss = 0
-        total_correct = 0
+        correct = 0
         total = 0
+        batch_count = len(loader)
         
         with torch.no_grad():
-            for inputs, labels in tqdm(loader, desc='Evaluating', leave=False):
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = model_to_eval(inputs)
-                loss = self.criterion(outputs, labels)
+            for batch_idx, (inputs, targets) in enumerate(loader, 1):
+                # Move to device and get batch size
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                batch_size = inputs.size(0)
                 
-                total_loss += loss.item()
+                # Forward pass
+                with autocast(enabled=self.use_amp):
+                    outputs = self.model(inputs)
+                    loss = self.criterion(outputs, targets)
+                
+                # Update metrics
+                total_loss += loss.item() * batch_size
                 _, predicted = outputs.max(1)
-                total += labels.size(0)
-                total_correct += predicted.eq(labels).sum().item()
+                total += batch_size
+                correct += predicted.eq(targets).sum().item()
+                
+                # Log progress
+                if batch_idx % max(1, batch_count // 5) == 0:
+                    logger.info(f'Eval: [{batch_idx}/{batch_count}] '
+                              f'Loss: {loss.item():.4f} '
+                              f'Acc: {100. * correct/total:.2f}%')
         
-        accuracy = total_correct / total
-        avg_loss = total_loss / len(loader)
+        # Calculate epoch metrics
+        avg_loss = total_loss / total
+        accuracy = 100. * correct / total
         
+        # Update metrics history
         self.metrics['val_losses'].append(avg_loss)
         self.metrics['val_accs'].append(accuracy)
         
-        return {'val_loss': avg_loss, 'val_acc': accuracy}
+        return avg_loss, accuracy
 
     def get_metrics(self):
         self.metrics['final_train_loss'] = self.metrics['train_losses'][-1]
@@ -171,6 +192,24 @@ class Trainer:
         self.metrics['best_train_loss'] = min(self.metrics['train_losses'])
         self.metrics['best_test_loss'] = min(self.metrics['val_losses'])
         return self.metrics
+
+    def should_stop(self):
+        patience = self.config.get('early_stopping_patience', 10)
+        min_delta = self.config.get('early_stopping_min_delta', 0.001)
+        patience_counter = 0
+        best_val_loss = float('inf')
+        
+        for val_loss in self.metrics['val_losses']:
+            if val_loss < (best_val_loss - min_delta):
+                best_val_loss = val_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                
+            if patience_counter >= patience:
+                return True
+        
+        return False
 
 class PoisonExperiment:
     def __init__(
@@ -264,6 +303,7 @@ class PoisonExperiment:
     def _train_model(self):
         """Train clean neural network model."""
         logger.info("Training clean neural network model...")
+        start_time = time.time()
         
         # Setup criterion and optimizer
         criterion = nn.CrossEntropyLoss(
@@ -292,69 +332,84 @@ class PoisonExperiment:
             device=self.device,
             config=self.config
         )
-
-        # Train clean model
-        patience = self.config.get('early_stopping_patience', 10)
-        min_delta = self.config.get('early_stopping_min_delta', 0.001)
-        patience_counter = 0
-        best_val_loss = float('inf')
         
-        for epoch in range(self.config['epochs']):
-            train_metrics = trainer.train_epoch(self.train_loader, epoch)
-            val_metrics = trainer.evaluate(self.test_loader, epoch)
+        # Training loop
+        epochs = int(self.config.get('epochs', 200))
+        logger.info(f"Starting training for {epochs} epochs")
+        logger.info(f"Batch size: {self.config['batch_size']}")
+        logger.info(f"Learning rate: {optimizer.param_groups[0]['lr']}")
+        
+        for epoch in range(1, epochs + 1):
+            epoch_start = time.time()
+            logger.info(f"Starting epoch {epoch}/{epochs}")
             
-            # Step the learning rate scheduler
+            # Train one epoch
+            train_loss, train_acc = trainer.train_epoch(self.train_loader, epoch)
+            logger.info(f"Epoch {epoch} - Train loss: {train_loss:.4f}, Train acc: {train_acc:.4f}")
+            
+            # Evaluate
+            val_loss, val_acc = trainer.evaluate(self.test_loader, epoch)
+            logger.info(f"Epoch {epoch} - Val loss: {val_loss:.4f}, Val acc: {val_acc:.4f}")
+            
+            # Update learning rate
             scheduler.step()
-            current_lr = scheduler.get_last_lr()[0]
-            logger.info(f"Learning rate: {current_lr:.6f}")
+            current_lr = optimizer.param_groups[0]['lr']
+            logger.info(f"Epoch {epoch} - Learning rate: {current_lr}")
+            
+            epoch_time = time.time() - epoch_start
+            logger.info(f"Epoch {epoch} completed in {epoch_time:.2f}s")
             
             # Early stopping check
-            val_loss = val_metrics['val_loss']
-            if val_loss < (best_val_loss - min_delta):
-                best_val_loss = val_loss
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                
-            logger.info(
-                f"Epoch {epoch+1}/{self.config['epochs']} - "
-                f"Train Loss: {train_metrics['train_loss']:.4f} - "
-                f"Val Loss: {val_metrics['val_loss']:.4f} - "
-                f"Val Acc: {val_metrics['val_acc']:.2f}% - "
-                f"Early Stop Counter: {patience_counter}/{patience}"
-            )
-            
-            # Save checkpoint
-            is_best = val_metrics['val_acc'] > best_val_loss
-            if is_best:
-                best_val_loss = val_metrics['val_acc']
-            
-            save_checkpoint(
-                state={
-                    'epoch': epoch,
-                    'state_dict': self.model.state_dict(),
-                    'best_acc': best_val_loss,
-                    'optimizer': optimizer.state_dict(),
-                    'swa_state_dict': trainer.swa_model.state_dict() if hasattr(trainer, 'swa_model') and trainer.swa_model is not None else None,
-                    'metrics': trainer.get_metrics(),
-                    'early_stopping_state': {
-                        'counter': patience_counter,
-                        'best_val_loss': best_val_loss,
-                        'min_delta': min_delta
-                    }
-                },
-                is_best=is_best,
-                checkpoint_dir=self.checkpoint_dir,
-                filename=f"clean_model_latest.pth.tar"
-            )
-            
-            # Early stopping
-            if patience_counter >= patience:
-                logger.info(f"Early stopping triggered after {epoch + 1} epochs")
+            if trainer.should_stop():
+                logger.info("Early stopping triggered")
                 break
+                
+        total_time = time.time() - start_time
+        logger.info(f"Training completed in {total_time:.2f}s")
+        return trainer
 
-        # Get final training metrics
-        training_metrics = trainer.get_metrics()
+    def run(self):
+        """Run the poisoning experiment."""
+        logger.info("Starting poisoning experiment")
+        
+        # Train model on clean data first
+        logger.info("Training model on clean data")
+        self._train_model()
+        clean_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Apply poisoning
+        logger.info(f"Applying {self.configs[0].poison_type} poisoning")
+        if self.configs[0].poison_type == PoisonType.PGD:
+            self._apply_pgd_attack()
+        elif self.configs[0].poison_type == PoisonType.GRADIENT_ASCENT:
+            self._apply_gradient_ascent()
+        else:
+            self._apply_label_flip()
+            
+        # Train model on poisoned data
+        logger.info("Training model on poisoned data")
+        self._train_model()
+        poisoned_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Save results
+        result = PoisonResult(
+            config=self.configs[0],
+            dataset_name=self.dataset_name,
+            poisoned_indices=self.poisoned_indices,
+            poison_success_rate=self.poison_success_rate,
+            original_accuracy=clean_accuracy,
+            poisoned_accuracy=poisoned_accuracy
+        )
+        result.save(self.output_dir)
+        logger.info(f"Experiment complete. Results saved to {self.output_dir}")
 
         # Now evaluate clean data with traditional classifiers using trained CNN features
         logger.info("Evaluating traditional classifiers on clean data...")
@@ -508,46 +563,3 @@ class PoisonExperiment:
 
         logger.info(f"Total experiment time: {time.time() - time.time():.2f}s")
         return results
-
-    def run(self):
-        """Run the poisoning experiment."""
-        logger.info("Starting poisoning experiment")
-        
-        # Train model on clean data first
-        logger.info("Training model on clean data")
-        self._train_model()
-        clean_accuracy = evaluate_model(
-            self.model,
-            self.test_loader,
-            self.device
-        )
-        
-        # Apply poisoning
-        logger.info(f"Applying {self.configs[0].poison_type} poisoning")
-        if self.configs[0].poison_type == PoisonType.PGD:
-            self._apply_pgd_attack()
-        elif self.configs[0].poison_type == PoisonType.GRADIENT_ASCENT:
-            self._apply_gradient_ascent()
-        else:
-            self._apply_label_flip()
-            
-        # Train model on poisoned data
-        logger.info("Training model on poisoned data")
-        self._train_model()
-        poisoned_accuracy = evaluate_model(
-            self.model,
-            self.test_loader,
-            self.device
-        )
-        
-        # Save results
-        result = PoisonResult(
-            config=self.configs[0],
-            dataset_name=self.dataset_name,
-            poisoned_indices=self.poisoned_indices,
-            poison_success_rate=self.poison_success_rate,
-            original_accuracy=clean_accuracy,
-            poisoned_accuracy=poisoned_accuracy
-        )
-        result.save(self.output_dir)
-        logger.info(f"Experiment complete. Results saved to {self.output_dir}")
