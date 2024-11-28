@@ -6,7 +6,8 @@ from typing import List, Optional
 from tqdm import tqdm
 import numpy as np
 import time
-from torch.optim import Adam
+from torch.optim import SGD, Adam
+from torch.optim.lr_scheduler import MultiStepLR
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
@@ -187,10 +188,12 @@ class PoisonExperiment:
             try:
                 start_epoch, best_acc = load_checkpoint(
                     model=self.model,
-                    optimizer=Adam(
+                    optimizer=SGD(
                         self.model.parameters(),
                         lr=self.learning_rate,
-                        weight_decay=0.0001
+                        momentum=0.9,
+                        weight_decay=0.0005,
+                        nesterov=True
                     ),
                     checkpoint_dir=self.checkpoint_dir,
                     name="clean_model",
@@ -214,18 +217,30 @@ class PoisonExperiment:
             'model_architecture': str(self.model),
             'epochs': self.epochs,
             'batch_size': self.batch_size,
-            'learning_rate': self.learning_rate,
-            'weight_decay': 0.0001,
-            'optimizer': 'Adam',
-            'early_stopping_patience': 10,  # Added early stopping config
-            'early_stopping_min_delta': 0.001,  # Minimum change to be considered an improvement
+            'learning_rate': 0.1,
+            'weight_decay': 0.0005,
+            'momentum': 0.9,
+            'optimizer': 'SGD',
+            'early_stopping_patience': 10,
+            'early_stopping_min_delta': 0.001,
+            'lr_milestones': [60, 120, 160],
+            'lr_gamma': 0.2,
         }
         
         criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-        optimizer = Adam(
+        optimizer = SGD(
             self.model.parameters(),
-            lr=self.learning_rate,
-            weight_decay=0.0001
+            lr=trainer_config['learning_rate'],
+            momentum=trainer_config['momentum'],
+            weight_decay=trainer_config['weight_decay'],
+            nesterov=True
+        )
+        
+        # Add learning rate scheduler
+        scheduler = MultiStepLR(
+            optimizer,
+            milestones=trainer_config['lr_milestones'],
+            gamma=trainer_config['lr_gamma']
         )
         
         trainer = Trainer(
@@ -245,6 +260,11 @@ class PoisonExperiment:
         for epoch in range(start_epoch, self.epochs):
             train_metrics = trainer.train_epoch(self.train_loader, epoch)
             val_metrics = trainer.evaluate(self.test_loader, epoch)
+            
+            # Step the learning rate scheduler
+            scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]
+            logger.info(f"Learning rate: {current_lr:.6f}")
             
             # Early stopping check
             val_loss = val_metrics['val_loss']
