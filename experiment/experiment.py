@@ -273,7 +273,7 @@ class PoisonExperiment:
                     'state_dict': self.model.state_dict(),
                     'best_acc': best_acc,
                     'optimizer': optimizer.state_dict(),
-                    'swa_state_dict': trainer.swa_model.state_dict() if trainer.use_swa else None,
+                    'swa_state_dict': trainer.swa_model.state_dict() if hasattr(trainer, 'swa_model') and trainer.swa_model is not None else None,
                     'metrics': trainer.get_metrics(),
                     'early_stopping_state': {
                         'counter': patience_counter,
