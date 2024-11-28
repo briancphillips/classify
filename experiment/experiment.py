@@ -20,6 +20,8 @@ from utils.checkpoints import save_checkpoint, load_checkpoint  # Added import
 from .evaluation import evaluate_model, evaluate_attack
 from .visualization import plot_results, plot_attack_comparison
 from traditional_classifiers import evaluate_traditional_classifiers_on_poisoned
+import yaml
+from torchvision import transforms
 
 logger = get_logger(__name__)
 error_logger = get_error_logger()
@@ -171,72 +173,83 @@ class Trainer:
         return self.metrics
 
 class PoisonExperiment:
-    """Class to manage poisoning experiments."""
-
     def __init__(
-        self,
-        dataset_name: str,
-        configs: List[PoisonConfig],
-        batch_size: int = 128,
-        epochs: int = 30,
-        learning_rate: float = 0.001,
-        num_workers: int = 2,
-        subset_size: Optional[int] = None,
-        device: Optional[torch.device] = None,
-        output_dir: str = "results",
-        checkpoint_dir: str = "checkpoints",
-    ):
+            self,
+            dataset_name: str,
+            configs: List[PoisonConfig],
+            config_path: str = "experiments/config.yaml",
+            device: Optional[torch.device] = None,
+            output_dir: str = "results",
+            checkpoint_dir: str = "checkpoints",
+        ):
         """Initialize experiment.
 
         Args:
             dataset_name: Name of dataset to use
             configs: List of poisoning configurations to run
-            batch_size: Batch size for training
-            epochs: Number of epochs to train
-            learning_rate: Learning rate for optimizer
-            num_workers: Number of workers for data loading
-            subset_size: Optional number of samples per class
+            config_path: Path to config.yaml
             device: Optional device to use
             output_dir: Directory to save results
             checkpoint_dir: Directory to save checkpoints
         """
+        # Load config
+        with open(config_path) as f:
+            full_config = yaml.safe_load(f)
+        
+        # Merge configs
+        self.config = {**full_config['defaults']}
+        if dataset_name in full_config['dataset_defaults']:
+            self.config.update(full_config['dataset_defaults'][dataset_name])
+            
         self.dataset_name = dataset_name
         self.configs = configs
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.num_workers = num_workers
-        self.subset_size = subset_size
         self.device = device if device is not None else get_device()
         self.output_dir = os.path.join(output_dir, dataset_name)
         self.checkpoint_dir = os.path.join(checkpoint_dir, dataset_name)
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
-        # Get datasets
+        # Get datasets with transforms
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4) if self.config.get('random_crop', True) else transforms.Lambda(lambda x: x),
+            transforms.RandomHorizontalFlip() if self.config.get('random_horizontal_flip', True) else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) if self.config.get('normalize', True) else transforms.Lambda(lambda x: x),
+            transforms.RandomErasing(p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=0) if self.config.get('cutout', True) else transforms.Lambda(lambda x: x)
+        ])
+        
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) if self.config.get('normalize', True) else transforms.Lambda(lambda x: x)
+        ])
+
         self.train_dataset = get_dataset(
-            dataset_name, train=True, subset_size=subset_size
+            dataset_name, 
+            train=True,
+            transform=train_transform
         )
         self.test_dataset = get_dataset(
-            dataset_name, train=False, subset_size=subset_size
+            dataset_name,
+            train=False,
+            transform=test_transform
         )
 
         # Create data loaders
         self.train_loader = DataLoader(
             self.train_dataset,
-            batch_size=batch_size,
+            batch_size=self.config['batch_size'],
             shuffle=True,
-            num_workers=num_workers,
-            pin_memory=True if num_workers > 0 else False,
-            persistent_workers=True if num_workers > 0 else False,
+            num_workers=self.config['num_workers'],
+            pin_memory=self.config.get('pin_memory', True),
+            persistent_workers=True if self.config['num_workers'] > 0 else False,
         )
         self.test_loader = DataLoader(
             self.test_dataset,
-            batch_size=batch_size,
+            batch_size=self.config['batch_size'],
             shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True if num_workers > 0 else False,
-            persistent_workers=True if num_workers > 0 else False,
+            num_workers=self.config['num_workers'],
+            pin_memory=self.config.get('pin_memory', True),
+            persistent_workers=True if self.config['num_workers'] > 0 else False,
         )
 
         # Create model
@@ -248,103 +261,45 @@ class PoisonExperiment:
         logger.info(f"Test samples: {len(self.test_dataset)}")
         logger.info(f"Running {len(self.configs)} poisoning configurations")
 
-    def run(self) -> List[PoisonResult]:
-        """Run all configured poisoning experiments.
-
-        Returns:
-            list: Results from all experiments
-        """
-        # Set seeds for reproducibility
-        torch.manual_seed(42)
-        np.random.seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(42)
-
-        results = []
-        experiment_start_time = time.time()
-
-        # First train clean neural network model
+    def _train_model(self):
+        """Train clean neural network model."""
         logger.info("Training clean neural network model...")
-        clean_checkpoint_path = os.path.join(self.checkpoint_dir, "clean_model")
-
-        # Try to load existing checkpoint
-        start_epoch = 0
-        best_acc = 0.0
-        if os.path.exists(clean_checkpoint_path + "_best.pth.tar"):
-            logger.info("Found existing checkpoint, attempting to load...")
-            try:
-                start_epoch, best_acc = load_checkpoint(
-                    model=self.model,
-                    optimizer=SGD(
-                        self.model.parameters(),
-                        lr=self.learning_rate,
-                        momentum=0.9,
-                        weight_decay=0.0005,
-                        nesterov=True
-                    ),
-                    checkpoint_dir=self.checkpoint_dir,
-                    name="clean_model",
-                    device=self.device,
-                    load_best=True
-                )
-                logger.info(f"Loaded checkpoint from epoch {start_epoch} with best accuracy {best_acc:.2f}%")
-            except Exception as e:
-                logger.warning(f"Failed to load checkpoint: {str(e)}")
-
-        # Create trainer with advanced configuration
-        trainer_config = {
-            'use_amp': True,
-            'use_swa': True,
-            'use_mixup': True,
-            'label_smoothing': 0.1,
-            'swa_start': self.epochs // 2,
-            'swa_lr': 0.05,
-            'mixup_epochs': 150,
-            'model_type': self.model.__class__.__name__,
-            'model_architecture': str(self.model),
-            'epochs': self.epochs,
-            'batch_size': self.batch_size,
-            'learning_rate': 0.1,
-            'weight_decay': 0.0005,
-            'momentum': 0.9,
-            'optimizer': 'SGD',
-            'early_stopping_patience': 10,
-            'early_stopping_min_delta': 0.001,
-            'lr_milestones': [60, 120, 160],
-            'lr_gamma': 0.2,
-        }
         
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        # Setup criterion and optimizer
+        criterion = nn.CrossEntropyLoss(
+            label_smoothing=self.config.get('label_smoothing', 0.1)
+        )
+        
         optimizer = SGD(
             self.model.parameters(),
-            lr=trainer_config['learning_rate'],
-            momentum=trainer_config['momentum'],
-            weight_decay=trainer_config['weight_decay'],
-            nesterov=True
+            lr=self.config['learning_rate'],
+            momentum=self.config.get('momentum', 0.9),
+            weight_decay=self.config.get('weight_decay', 5e-4)
         )
         
-        # Add learning rate scheduler
+        # Setup scheduler
         scheduler = MultiStepLR(
             optimizer,
-            milestones=trainer_config['lr_milestones'],
-            gamma=trainer_config['lr_gamma']
+            milestones=self.config.get('lr_schedule', [60, 120, 160]),
+            gamma=self.config.get('lr_factor', 0.2)
         )
         
+        # Create trainer
         trainer = Trainer(
             model=self.model,
             criterion=criterion,
             optimizer=optimizer,
             device=self.device,
-            config=trainer_config
+            config=self.config
         )
 
         # Train clean model
-        patience = trainer_config['early_stopping_patience']
-        min_delta = trainer_config['early_stopping_min_delta']
+        patience = self.config.get('early_stopping_patience', 10)
+        min_delta = self.config.get('early_stopping_min_delta', 0.001)
         patience_counter = 0
         best_val_loss = float('inf')
         
-        for epoch in range(start_epoch, self.epochs):
+        for epoch in range(self.config['epochs']):
             train_metrics = trainer.train_epoch(self.train_loader, epoch)
             val_metrics = trainer.evaluate(self.test_loader, epoch)
             
@@ -362,7 +317,7 @@ class PoisonExperiment:
                 patience_counter += 1
                 
             logger.info(
-                f"Epoch {epoch+1}/{self.epochs} - "
+                f"Epoch {epoch+1}/{self.config['epochs']} - "
                 f"Train Loss: {train_metrics['train_loss']:.4f} - "
                 f"Val Loss: {val_metrics['val_loss']:.4f} - "
                 f"Val Acc: {val_metrics['val_acc']:.2f}% - "
@@ -370,15 +325,15 @@ class PoisonExperiment:
             )
             
             # Save checkpoint
-            is_best = val_metrics['val_acc'] > best_acc
+            is_best = val_metrics['val_acc'] > best_val_loss
             if is_best:
-                best_acc = val_metrics['val_acc']
+                best_val_loss = val_metrics['val_acc']
             
             save_checkpoint(
                 state={
                     'epoch': epoch,
                     'state_dict': self.model.state_dict(),
-                    'best_acc': best_acc,
+                    'best_acc': best_val_loss,
                     'optimizer': optimizer.state_dict(),
                     'swa_state_dict': trainer.swa_model.state_dict() if hasattr(trainer, 'swa_model') and trainer.swa_model is not None else None,
                     'metrics': trainer.get_metrics(),
@@ -408,7 +363,7 @@ class PoisonExperiment:
             self.test_dataset,
             self.dataset_name
         )
-        results.extend(traditional_results)
+        results = traditional_results
 
         # Run each poisoning configuration
         for config in self.configs:
@@ -430,7 +385,7 @@ class PoisonExperiment:
                 # Create poisoned data loader
                 poisoned_loader = DataLoader(
                     poisoned_dataset,
-                    batch_size=self.batch_size,
+                    batch_size=self.config['batch_size'],
                     shuffle=True,
                     num_workers=0,
                     pin_memory=False,
@@ -443,14 +398,14 @@ class PoisonExperiment:
                     criterion=criterion,
                     optimizer=optimizer,
                     device=self.device,
-                    config=trainer_config
+                    config=self.config
                 )
 
-                for epoch in range(self.epochs):
+                for epoch in range(self.config['epochs']):
                     train_metrics = poisoned_trainer.train_epoch(poisoned_loader, epoch)
                     val_metrics = poisoned_trainer.evaluate(self.test_loader, epoch)
                     logger.info(
-                        f"Epoch {epoch+1}/{self.epochs} - "
+                        f"Epoch {epoch+1}/{self.config['epochs']} - "
                         f"Train Loss: {train_metrics['train_loss']:.4f} - "
                         f"Val Loss: {val_metrics['val_loss']:.4f} - "
                         f"Val Acc: {val_metrics['val_acc']:.2f}%"
@@ -483,15 +438,18 @@ class PoisonExperiment:
                     
                     # Configuration
                     'config': {
-                        'model_type': trainer_config['model_type'],
-                        'model_architecture': trainer_config['model_architecture'],
+                        'model_type': self.config.get('model_type', 'ResNet18'),
+                        'model_architecture': str(self.model),
                         'poison_type': config.poison_type.value,
-                        'epochs': self.epochs,
-                        'batch_size': self.batch_size,
-                        'learning_rate': self.learning_rate,
-                        'weight_decay': trainer_config['weight_decay'],
-                        'optimizer': trainer_config['optimizer'],
-                        'num_classes': 100 if self.dataset_name.lower() == 'cifar100' else 43 if self.dataset_name.lower() == 'gtsrb' else 10,
+                        'epochs': self.config['epochs'],
+                        'batch_size': self.config['batch_size'],
+                        'learning_rate': self.config['learning_rate'],
+                        'weight_decay': self.config.get('weight_decay', 5e-4),
+                        'optimizer': 'SGD',
+                        'early_stopping_patience': self.config.get('early_stopping_patience', 10),
+                        'early_stopping_min_delta': self.config.get('early_stopping_min_delta', 0.001),
+                        'lr_milestones': self.config.get('lr_schedule', [60, 120, 160]),
+                        'lr_gamma': self.config.get('lr_factor', 0.2),
                     },
                     
                     # Dataset info
@@ -499,7 +457,7 @@ class PoisonExperiment:
                         'name': self.dataset_name,
                         'train_size': len(self.train_dataset),
                         'test_size': len(self.test_dataset),
-                        'subset_size': self.subset_size,
+                        'subset_size': self.config.get('subset_size', None),
                     },
                     
                     # Training metrics
@@ -548,5 +506,5 @@ class PoisonExperiment:
             plot_results(results, self.output_dir)
             plot_attack_comparison(results, self.output_dir)
 
-        logger.info(f"Total experiment time: {time.time() - experiment_start_time:.2f}s")
+        logger.info(f"Total experiment time: {time.time() - time.time():.2f}s")
         return results

@@ -1,17 +1,49 @@
 # Default configuration that applies to all experiments unless overridden
 defaults:
-  batch_size: 32
-  num_workers: 0
-  poison_ratio: 0.05
+  batch_size: 128
+  num_workers: 4
+  pin_memory: true
+  use_amp: true
+  use_swa: true
+  use_mixup: true
+  label_smoothing: 0.1
+  
+  # Optimizer settings
+  optimizer: SGD
+  learning_rate: 0.1
+  momentum: 0.9
+  weight_decay: 5e-4
+  
+  # Learning rate schedule
+  lr_schedule: [60, 120, 160]
+  lr_factor: 0.2
+  
+  # SWA settings
+  swa_start: 160
+  swa_lr: 0.05
+  
+  # Early stopping
+  patience: 20
+  min_delta: 0.001
+  
+  # Data augmentation
+  random_crop: true
+  random_horizontal_flip: true
+  normalize: true
+  cutout: true
+  cutout_length: 16
 
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:
     epochs: 200
-    learning_rate: 0.001
+    model: wrn-28-10
+    num_classes: 100
+    
   gtsrb:
     epochs: 10
     learning_rate: 0.001
+    
   imagenette:
     epochs: 10
     learning_rate: 0.001
@@ -23,7 +55,6 @@ experiment_groups:
     experiments:
       - name: cifar100_all_attacks
         dataset: cifar100
-        subset_size: 10
         attacks: [pgd, ga, label_flip]
       
       - name: gtsrb_all_attacks
