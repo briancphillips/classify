@@ -22,6 +22,12 @@ defaults:
   normalize_mean: [0.5071, 0.4867, 0.4408]  # CIFAR-100 means
   normalize_std: [0.2675, 0.2565, 0.2761]   # CIFAR-100 stds
 
+# Output configuration
+output:
+  base_dir: "results"
+  save_model: true
+  save_frequency: 10
+
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:

@@ -98,7 +98,7 @@ class ExperimentManager:
             logger.info(f"Results: {results}")
             
         except Exception as e:
-            error_logger.log_error(e, f"Experiment failed: {experiment['name']}")
+            logger.error(f"Experiment failed: {experiment['name']}", exc_info=True)
             raise
     
     def run_experiments(self):
@@ -149,7 +149,7 @@ class ExperimentManager:
                     completion_percentage = (completed_experiments/self.total_experiments)*100
                     print(f"Completed {exp_name}_{attack} ({completed_experiments}/{self.total_experiments} - {completion_percentage:.1f}%)", flush=True)
                 except Exception as e:
-                    error_logger.log_error(e, f"Error collecting results for {exp_name}_{attack}")
+                    logger.error(f"Error collecting results for {exp_name}_{attack}", exc_info=True)
                     print(f"Failed: {exp_name}_{attack} - {str(e)}", flush=True)
         
         # Consolidate results with progress bar
@@ -209,8 +209,7 @@ class ExperimentManager:
                             logger.warning(f"Failed to remove file {file}: {e}")
                 
         except Exception as e:
-            error_logger.log_error(e, "Error consolidating results")
-            logger.error(f"Error consolidating results: {str(e)}")
+            logger.error(f"Error consolidating results: {str(e)}", exc_info=True)
 
 def main():
     try:
@@ -244,12 +243,9 @@ def main():
         manager = ExperimentManager(args.config)
         manager.run_experiments()
         
-    except KeyboardInterrupt:
-        logger.info("Training interrupted by user")
-        sys.exit(0)
     except Exception as e:
-        error_logger.exception("An error occurred during training:")
-        raise
+        logger.error(f"An error occurred during training: {str(e)}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
