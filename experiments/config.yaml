@@ -10,9 +10,10 @@ defaults:
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.1
+  learning_rate: 0.01
   momentum: 0.9
-  weight_decay: 5e-4
+  weight_decay: 1e-4
+  grad_clip: 1.0
   
   # Learning rate schedule
   lr_schedule: [60, 120, 160]
@@ -20,7 +21,7 @@ defaults:
   
   # SWA settings
   swa_start: 160
-  swa_lr: 0.05
+  swa_lr: 0.01
   
   # Early stopping
   patience: 20

@@ -38,10 +38,14 @@ class Trainer:
         self.use_amp = config.get('use_amp', True) and self.device.type == 'cuda'
         self.use_swa = config.get('use_swa', True)
         self.use_mixup = config.get('use_mixup', True)
-        self.label_smoothing = config.get('label_smoothing', 0.1)
+        # Disable label smoothing if using mixup to avoid instability
+        self.label_smoothing = config.get('label_smoothing', 0.1) if not self.use_mixup else 0.0
         
         # Setup mixed precision training
         self.scaler = GradScaler() if self.use_amp else None
+        
+        # Gradient clipping value
+        self.grad_clip = config.get('grad_clip', 1.0)
         
         # Setup SWA if enabled
         if self.use_swa:
@@ -63,10 +67,6 @@ class Trainer:
             'training_time': 0,
             'inference_time': 0,
         }
-        
-        # Initialize memory tracking
-        if self.device.type == 'cuda':
-            self.track_memory_usage()
         
         logger.info(f"Initialized trainer with config: {config}")
         
@@ -114,65 +114,90 @@ class Trainer:
         # Use torch.cuda.amp.autocast() for mixed precision training
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             for batch_idx, (inputs, targets) in enumerate(loader, 1):
-                # Move to device and get batch size
-                inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
-                batch_size = inputs.size(0)
-                
-                # Mixup
-                if self.use_mixup:
-                    inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
-                
-                # Forward pass
-                outputs = self.model(inputs)
-                if self.use_mixup:
-                    loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
-                else:
-                    loss = self.criterion(outputs, targets)
-                
-                # Backward pass
-                self.optimizer.zero_grad(set_to_none=True)
-                if self.use_amp:
-                    self.scaler.scale(loss).backward()
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    loss.backward()
-                    self.optimizer.step()
-                
-                # Update metrics
-                total_loss += loss.item() * batch_size
-                _, predicted = outputs.max(1)
-                total += batch_size
-                if self.use_mixup:
-                    correct += (lam * predicted.eq(targets_a).sum().item()
-                              + (1 - lam) * predicted.eq(targets_b).sum().item())
-                else:
-                    correct += predicted.eq(targets).sum().item()
-                
-                # Log progress and memory usage
-                if batch_idx % max(1, batch_count // 5) == 0:
-                    logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
-                              f'Loss: {loss.item():.4f} '
-                              f'Acc: {100. * correct/total:.2f}%')
-                    self.track_memory_usage()
-                
-                # Clear GPU cache and delete intermediate tensors
-                if batch_idx % 50 == 0:
-                    del outputs, loss
+                try:
+                    # Move to device and get batch size
+                    inputs = inputs.to(self.device, non_blocking=True)
+                    targets = targets.to(self.device, non_blocking=True)
+                    batch_size = inputs.size(0)
+                    
+                    # Mixup
                     if self.use_mixup:
-                        del targets_a, targets_b
-                    torch.cuda.empty_cache()
+                        inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
+                    
+                    # Forward pass
+                    outputs = self.model(inputs)
+                    
+                    # Check for NaN in outputs
+                    if torch.isnan(outputs).any():
+                        logger.warning(f"NaN detected in model outputs at batch {batch_idx}")
+                        continue
+                    
+                    if self.use_mixup:
+                        loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
+                    else:
+                        loss = self.criterion(outputs, targets)
+                    
+                    # Check for NaN in loss
+                    if torch.isnan(loss):
+                        logger.warning(f"NaN detected in loss at batch {batch_idx}")
+                        continue
+                    
+                    # Backward pass
+                    self.optimizer.zero_grad(set_to_none=True)
+                    if self.use_amp:
+                        self.scaler.scale(loss).backward()
+                        # Unscale before gradient clipping
+                        self.scaler.unscale_(self.optimizer)
+                        # Clip gradients
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        loss.backward()
+                        # Clip gradients
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        self.optimizer.step()
+                    
+                    # Update metrics
+                    total_loss += loss.item() * batch_size
+                    _, predicted = outputs.max(1)
+                    total += batch_size
+                    if self.use_mixup:
+                        correct += (lam * predicted.eq(targets_a).sum().item()
+                                + (1 - lam) * predicted.eq(targets_b).sum().item())
+                    else:
+                        correct += predicted.eq(targets).sum().item()
+                    
+                    # Log progress
+                    if batch_idx % max(1, batch_count // 5) == 0:
+                        logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
+                                f'Loss: {loss.item():.4f} '
+                                f'Acc: {100. * correct/total:.2f}%')
+                        self.track_memory_usage()
+                    
+                    # Clear GPU cache periodically
+                    if batch_idx % 50 == 0:
+                        del outputs, loss
+                        if self.use_mixup:
+                            del targets_a, targets_b
+                        torch.cuda.empty_cache()
+                        
+                except RuntimeError as e:
+                    logger.error(f"Error in batch {batch_idx}: {str(e)}")
+                    continue
         
         # Calculate epoch metrics
-        avg_loss = total_loss / total
-        accuracy = 100. * correct / total
+        if total > 0:  # Ensure we processed at least one batch successfully
+            avg_loss = total_loss / total
+            accuracy = 100. * correct / total
+        else:
+            logger.error("No batches were processed successfully in this epoch")
+            avg_loss = float('inf')
+            accuracy = 0.0
         
         # Update metrics history
         self.metrics['train_losses'].append(avg_loss)
         self.metrics['train_accs'].append(accuracy)
-        
-        # Final memory check
-        self.track_memory_usage()
         
         return avg_loss, accuracy
 
