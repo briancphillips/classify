@@ -13,6 +13,7 @@ from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
 from utils.logging import get_logger
 from utils.error_logging import get_error_logger
+from utils.checkpoints import save_checkpoint, load_checkpoint  # Added import
 from .evaluation import evaluate_model, evaluate_attack
 from .visualization import plot_results, plot_attack_comparison
 from traditional_classifiers import evaluate_traditional_classifiers_on_poisoned
