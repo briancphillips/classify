@@ -72,6 +72,9 @@ class ExperimentManager:
         
         # Add all parameters to command
         for key, value in params.items():
+            # Handle special cases
+            if key == 'lr_schedule':
+                value = ','.join(map(str, value))
             cmd.extend([f"--{key.replace('_', '-')}", str(value)])
         
         # Add dataset and attack
