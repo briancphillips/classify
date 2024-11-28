@@ -3,17 +3,17 @@ defaults:
   batch_size: 128
   num_workers: 4
   pin_memory: true
-  use_amp: true
-  use_swa: true
+  use_amp: false
+  use_swa: false
   use_mixup: false
-  label_smoothing: 0.1
+  label_smoothing: 0.0
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.001
+  learning_rate: 0.0001
   momentum: 0.9
-  weight_decay: 1e-4
-  grad_clip: 0.5
+  weight_decay: 5e-4
+  grad_clip: 1.0
   
   # Learning rate schedule
   lr_schedule: [60, 120, 160]
@@ -31,7 +31,7 @@ defaults:
   random_crop: true
   random_horizontal_flip: true
   normalize: true
-  cutout: true
+  cutout: false
   cutout_length: 16
 
 # Dataset-specific defaults
@@ -40,12 +40,12 @@ dataset_defaults:
     epochs: 200
     model: wrn-28-10
     num_classes: 100
-    batch_size: 64
-    learning_rate: 0.001
-    weight_decay: 1e-4
-    grad_clip: 0.5
+    batch_size: 32
+    learning_rate: 0.0001
+    weight_decay: 5e-4
+    grad_clip: 1.0
     use_mixup: false
-    label_smoothing: 0.1
+    label_smoothing: 0.0
     
   gtsrb:
     epochs: 10

@@ -107,119 +107,80 @@ class Trainer:
         correct = 0
         total = 0
         batch_count = len(loader)
-        nan_count = 0
-        max_nan_batches = 5  # Maximum number of NaN batches before triggering learning rate reduction
         
         # Track initial memory usage
         self.track_memory_usage()
         
-        # Use torch.cuda.amp.autocast() for mixed precision training
-        with torch.cuda.amp.autocast(enabled=self.use_amp):
-            for batch_idx, (inputs, targets) in enumerate(loader, 1):
-                try:
-                    # Move to device and get batch size
-                    inputs = inputs.to(self.device, non_blocking=True)
-                    targets = targets.to(self.device, non_blocking=True)
-                    batch_size = inputs.size(0)
-                    
-                    # Check input ranges
-                    if torch.isnan(inputs).any() or torch.isinf(inputs).any():
-                        logger.warning(f"NaN/Inf detected in inputs at batch {batch_idx}")
-                        continue
-                    
-                    # Normalize input range if needed
-                    if inputs.abs().max() > 100:
-                        inputs = inputs.clamp(-100, 100)
-                    
-                    # Forward pass
-                    outputs = self.model(inputs)
-                    
-                    # Check for NaN in outputs
-                    if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                        logger.warning(f"NaN/Inf detected in model outputs at batch {batch_idx}")
-                        nan_count += 1
-                        if nan_count >= max_nan_batches:
-                            # Reduce learning rate
-                            for param_group in self.optimizer.param_groups:
-                                param_group['lr'] *= 0.5
-                            logger.warning(f"Reducing learning rate to {param_group['lr']} due to repeated NaN values")
-                            nan_count = 0
-                        continue
-                    
-                    # Calculate loss
+        for batch_idx, (inputs, targets) in enumerate(loader, 1):
+            try:
+                # Move to device and get batch size
+                inputs = inputs.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                batch_size = inputs.size(0)
+                
+                # Normalize input range if needed
+                if inputs.abs().max() > 100:
+                    inputs = inputs.clamp(-100, 100)
+                
+                # Zero gradients
+                self.optimizer.zero_grad(set_to_none=True)
+                
+                # Forward pass with autocast
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    # Mixup
                     if self.use_mixup:
                         inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
                         outputs = self.model(inputs)
                         loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
                     else:
+                        outputs = self.model(inputs)
                         loss = self.criterion(outputs, targets)
-                    
-                    # Check for NaN in loss
-                    if torch.isnan(loss) or torch.isinf(loss):
-                        logger.warning(f"NaN/Inf detected in loss at batch {batch_idx}")
-                        nan_count += 1
-                        if nan_count >= max_nan_batches:
-                            # Reduce learning rate
-                            for param_group in self.optimizer.param_groups:
-                                param_group['lr'] *= 0.5
-                            logger.warning(f"Reducing learning rate to {param_group['lr']} due to repeated NaN values")
-                            nan_count = 0
-                        continue
-                    
-                    # Backward pass with gradient clipping
-                    self.optimizer.zero_grad(set_to_none=True)
-                    if self.use_amp:
-                        self.scaler.scale(loss).backward()
-                        # Unscale before gradient clipping
-                        self.scaler.unscale_(self.optimizer)
-                        # Clip gradients
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-                        # Check for NaN gradients
-                        if any(p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()) 
-                              for p in self.model.parameters()):
-                            logger.warning(f"NaN/Inf detected in gradients at batch {batch_idx}")
-                            continue
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
-                    else:
-                        loss.backward()
-                        # Clip gradients
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-                        # Check for NaN gradients
-                        if any(p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()) 
-                              for p in self.model.parameters()):
-                            logger.warning(f"NaN/Inf detected in gradients at batch {batch_idx}")
-                            continue
-                        self.optimizer.step()
-                    
-                    # Update metrics
-                    total_loss += loss.item() * batch_size
-                    _, predicted = outputs.max(1)
-                    total += batch_size
-                    if self.use_mixup:
-                        correct += (lam * predicted.eq(targets_a).sum().item()
-                                + (1 - lam) * predicted.eq(targets_b).sum().item())
-                    else:
-                        correct += predicted.eq(targets).sum().item()
-                    
-                    # Log progress
-                    if batch_idx % max(1, batch_count // 5) == 0:
-                        logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
-                                f'Loss: {loss.item():.4f} '
-                                f'Acc: {100. * correct/total:.2f}% '
-                                f'LR: {self.optimizer.param_groups[0]["lr"]:.6f}')
-                        self.track_memory_usage()
-                    
-                    # Clear GPU cache periodically
-                    if batch_idx % 50 == 0:
-                        del outputs, loss
-                        if self.use_mixup:
-                            del targets_a, targets_b
-                        torch.cuda.empty_cache()
-                        
-                except RuntimeError as e:
-                    logger.error(f"Error in batch {batch_idx}: {str(e)}")
+                
+                # Check for NaN/Inf
+                if torch.isnan(loss) or torch.isinf(loss):
+                    logger.warning(f"NaN/Inf detected in loss at batch {batch_idx}")
                     continue
+                
+                # Backward pass with gradient scaling
+                if self.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                    self.optimizer.step()
+                
+                # Update metrics
+                total_loss += loss.item() * batch_size
+                _, predicted = outputs.max(1)
+                total += batch_size
+                if self.use_mixup:
+                    correct += (lam * predicted.eq(targets_a).sum().item()
+                            + (1 - lam) * predicted.eq(targets_b).sum().item())
+                else:
+                    correct += predicted.eq(targets).sum().item()
+                
+                # Log progress
+                if batch_idx % max(1, batch_count // 5) == 0:
+                    logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
+                            f'Loss: {loss.item():.4f} '
+                            f'Acc: {100. * correct/total:.2f}% '
+                            f'LR: {self.optimizer.param_groups[0]["lr"]:.6f}')
+                    self.track_memory_usage()
+                
+                # Clear GPU cache periodically
+                if batch_idx % 50 == 0:
+                    del outputs, loss
+                    if self.use_mixup:
+                        del targets_a, targets_b
+                    torch.cuda.empty_cache()
+                    
+            except RuntimeError as e:
+                logger.error(f"Error in batch {batch_idx}: {str(e)}")
+                continue
         
         # Calculate epoch metrics
         if total > 0:  # Ensure we processed at least one batch successfully
