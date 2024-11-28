@@ -64,6 +64,7 @@ experiment_groups:
 output:
   base_dir: "results"
   consolidated_file: "all_results.csv"
+  save_individual_results: true  # Whether to keep individual experiment CSV files
 
 # Execution configuration
 execution:

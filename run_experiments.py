@@ -238,11 +238,14 @@ class ExperimentManager:
             logger.info("Results consolidated successfully")
             
             # Optionally remove individual result files
-            if not self.config['output']['save_individual_results']:
+            save_individual = self.config['output'].get('save_individual_results', True)
+            if not save_individual:
                 with tqdm(result_files, desc="Cleaning up individual files", unit="file", mininterval=0.1) as pbar:
                     for file in pbar:
-                        Path(file).unlink()
-                logger.info("Removed individual result files")
+                        try:
+                            Path(file).unlink()
+                        except Exception as e:
+                            logger.warning(f"Failed to remove file {file}: {e}")
                 
         except Exception as e:
             error_logger.log_error(e, "Error consolidating results")
