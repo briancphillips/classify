@@ -233,8 +233,8 @@ def get_model(dataset_name: str) -> nn.Module:
         ValueError: If dataset name is not supported
     """
     if dataset_name.lower() == "cifar100":
-        logger.info("Using Wide ResNet-40-2 for CIFAR100")
-        return WideResNet(depth=40, widen_factor=2, dropout_rate=0.0, num_classes=100)
+        logger.info("Using Wide ResNet-28-10 for CIFAR100")
+        return WideResNet(depth=28, widen_factor=10, dropout_rate=0.3, num_classes=100)
     elif dataset_name.lower() == "gtsrb":
         logger.info("Using custom CNN for GTSRB")
         return GTSRBClassifier()
