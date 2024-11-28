@@ -107,6 +107,8 @@ class Trainer:
         correct = 0
         total = 0
         batch_count = len(loader)
+        nan_count = 0
+        max_nan_batches = 5  # Maximum number of NaN batches before triggering learning rate reduction
         
         # Track initial memory usage
         self.track_memory_usage()
@@ -120,29 +122,51 @@ class Trainer:
                     targets = targets.to(self.device, non_blocking=True)
                     batch_size = inputs.size(0)
                     
-                    # Mixup
-                    if self.use_mixup:
-                        inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
+                    # Check input ranges
+                    if torch.isnan(inputs).any() or torch.isinf(inputs).any():
+                        logger.warning(f"NaN/Inf detected in inputs at batch {batch_idx}")
+                        continue
+                    
+                    # Normalize input range if needed
+                    if inputs.abs().max() > 100:
+                        inputs = inputs.clamp(-100, 100)
                     
                     # Forward pass
                     outputs = self.model(inputs)
                     
                     # Check for NaN in outputs
-                    if torch.isnan(outputs).any():
-                        logger.warning(f"NaN detected in model outputs at batch {batch_idx}")
+                    if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                        logger.warning(f"NaN/Inf detected in model outputs at batch {batch_idx}")
+                        nan_count += 1
+                        if nan_count >= max_nan_batches:
+                            # Reduce learning rate
+                            for param_group in self.optimizer.param_groups:
+                                param_group['lr'] *= 0.5
+                            logger.warning(f"Reducing learning rate to {param_group['lr']} due to repeated NaN values")
+                            nan_count = 0
                         continue
                     
+                    # Calculate loss
                     if self.use_mixup:
+                        inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
+                        outputs = self.model(inputs)
                         loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
                     else:
                         loss = self.criterion(outputs, targets)
                     
                     # Check for NaN in loss
-                    if torch.isnan(loss):
-                        logger.warning(f"NaN detected in loss at batch {batch_idx}")
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        logger.warning(f"NaN/Inf detected in loss at batch {batch_idx}")
+                        nan_count += 1
+                        if nan_count >= max_nan_batches:
+                            # Reduce learning rate
+                            for param_group in self.optimizer.param_groups:
+                                param_group['lr'] *= 0.5
+                            logger.warning(f"Reducing learning rate to {param_group['lr']} due to repeated NaN values")
+                            nan_count = 0
                         continue
                     
-                    # Backward pass
+                    # Backward pass with gradient clipping
                     self.optimizer.zero_grad(set_to_none=True)
                     if self.use_amp:
                         self.scaler.scale(loss).backward()
@@ -150,12 +174,22 @@ class Trainer:
                         self.scaler.unscale_(self.optimizer)
                         # Clip gradients
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        # Check for NaN gradients
+                        if any(p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()) 
+                              for p in self.model.parameters()):
+                            logger.warning(f"NaN/Inf detected in gradients at batch {batch_idx}")
+                            continue
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
                     else:
                         loss.backward()
                         # Clip gradients
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        # Check for NaN gradients
+                        if any(p.grad is not None and (torch.isnan(p.grad).any() or torch.isinf(p.grad).any()) 
+                              for p in self.model.parameters()):
+                            logger.warning(f"NaN/Inf detected in gradients at batch {batch_idx}")
+                            continue
                         self.optimizer.step()
                     
                     # Update metrics
@@ -172,7 +206,8 @@ class Trainer:
                     if batch_idx % max(1, batch_count // 5) == 0:
                         logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
                                 f'Loss: {loss.item():.4f} '
-                                f'Acc: {100. * correct/total:.2f}%')
+                                f'Acc: {100. * correct/total:.2f}% '
+                                f'LR: {self.optimizer.param_groups[0]["lr"]:.6f}')
                         self.track_memory_usage()
                     
                     # Clear GPU cache periodically

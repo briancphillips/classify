@@ -39,15 +39,19 @@ class WideResNet(nn.Module):
         
         self.nChannels = nChannels[3]
 
-        # Initialize weights
+        # Initialize weights with more stable initialization
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                # Use Xavier/Glorot initialization for conv layers
+                nn.init.xavier_normal_(m.weight, gain=1.0)
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+                # Initialize BatchNorm with slightly positive bias
+                nn.init.constant_(m.weight, 1.0)
+                nn.init.constant_(m.bias, 0.1)
             elif isinstance(m, nn.Linear):
-                m.bias.data.zero_()
+                # Use Xavier/Glorot initialization for fully connected layers
+                nn.init.xavier_normal_(m.weight, gain=1.0)
+                nn.init.constant_(m.bias, 0.1)
     
     def forward(self, x):
         out = self.conv1(x)

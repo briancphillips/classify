@@ -5,15 +5,15 @@ defaults:
   pin_memory: true
   use_amp: true
   use_swa: true
-  use_mixup: true
+  use_mixup: false
   label_smoothing: 0.1
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.01
+  learning_rate: 0.001
   momentum: 0.9
   weight_decay: 1e-4
-  grad_clip: 1.0
+  grad_clip: 0.5
   
   # Learning rate schedule
   lr_schedule: [60, 120, 160]
@@ -21,7 +21,7 @@ defaults:
   
   # SWA settings
   swa_start: 160
-  swa_lr: 0.01
+  swa_lr: 0.001
   
   # Early stopping
   patience: 20
@@ -40,6 +40,12 @@ dataset_defaults:
     epochs: 200
     model: wrn-28-10
     num_classes: 100
+    batch_size: 64
+    learning_rate: 0.001
+    weight_decay: 1e-4
+    grad_clip: 0.5
+    use_mixup: false
+    label_smoothing: 0.1
     
   gtsrb:
     epochs: 10
