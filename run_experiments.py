@@ -87,15 +87,16 @@ class ExperimentManager:
             if result.stdout:
                 logger.info(f"Command stdout:\n{result.stdout}")
             if result.stderr:
-                error_logger.error(f"Command stderr:\n{result.stderr}")
+                logger.error(f"Command stderr:\n{result.stderr}")
             
             # Check result
             if result.returncode != 0:
-                error_logger.error(f"Command failed with return code {result.returncode}")
+                error_msg = f"Command failed with return code {result.returncode}"
+                error_logger.log_error_msg(error_msg)
                 raise subprocess.CalledProcessError(result.returncode, cmd)
             
         except Exception as e:
-            error_logger.exception(f"Experiment failed: {experiment['name']} - {str(e)}")
+            error_logger.log_error(e, f"Experiment failed: {experiment['name']}")
             raise
     
     def run_experiments(self):

@@ -45,7 +45,7 @@ def main():
                 config = yaml.safe_load(f)
             logger.info(f"Loaded config from {args.config}")
         except Exception as e:
-            error_logger.error(f"Failed to load config from {args.config}: {str(e)}")
+            error_logger.log_error(e, f"Failed to load config from {args.config}")
             raise
         
         # Create poison config
@@ -56,7 +56,7 @@ def main():
             )
             logger.info(f"Created poison config: {poison_config}")
         except Exception as e:
-            error_logger.error(f"Failed to create poison config: {str(e)}")
+            error_logger.log_error(e, "Failed to create poison config")
             raise
         
         # Create experiment
@@ -69,18 +69,18 @@ def main():
             )
             logger.info("Created experiment")
         except Exception as e:
-            error_logger.error(f"Failed to create experiment: {str(e)}")
+            error_logger.log_error(e, "Failed to create experiment")
             raise
         
         # Run experiment
         try:
             experiment.run()
         except Exception as e:
-            error_logger.error(f"Failed to run experiment: {str(e)}")
+            error_logger.log_error(e, "Failed to run experiment")
             raise
         
     except Exception as e:
-        error_logger.exception(f"Experiment failed: {str(e)}")
+        error_logger.log_error(e, "Experiment failed")
         sys.exit(1)
 
 if __name__ == "__main__":
