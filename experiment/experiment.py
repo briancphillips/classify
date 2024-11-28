@@ -267,21 +267,21 @@ class PoisonExperiment:
         
         # Setup criterion and optimizer
         criterion = nn.CrossEntropyLoss(
-            label_smoothing=self.config.get('label_smoothing', 0.1)
+            label_smoothing=float(self.config.get('label_smoothing', 0.1))
         )
         
         optimizer = SGD(
             self.model.parameters(),
-            lr=self.config['learning_rate'],
-            momentum=self.config.get('momentum', 0.9),
-            weight_decay=self.config.get('weight_decay', 5e-4)
+            lr=float(self.config['learning_rate']),
+            momentum=float(self.config.get('momentum', 0.9)),
+            weight_decay=float(self.config.get('weight_decay', 5e-4))
         )
         
         # Setup scheduler
         scheduler = MultiStepLR(
             optimizer,
-            milestones=self.config.get('lr_schedule', [60, 120, 160]),
-            gamma=self.config.get('lr_factor', 0.2)
+            milestones=[int(x) for x in self.config.get('lr_schedule', [60, 120, 160])],
+            gamma=float(self.config.get('lr_factor', 0.2))
         )
         
         # Create trainer
