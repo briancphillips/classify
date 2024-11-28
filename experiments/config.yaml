@@ -1,10 +1,20 @@
 # Default configuration that applies to all experiments unless overridden
 defaults:
-  epochs: 2
   batch_size: 32
-  subset_size: 10
   num_workers: 0
   poison_ratio: 0.05
+
+# Dataset-specific defaults
+dataset_defaults:
+  cifar100:
+    epochs: 200
+    learning_rate: 0.001
+  gtsrb:
+    epochs: 10
+    learning_rate: 0.001
+  imagenette:
+    epochs: 10
+    learning_rate: 0.001
 
 # Experiment groups
 experiment_groups:
@@ -13,14 +23,17 @@ experiment_groups:
     experiments:
       - name: cifar100_all_attacks
         dataset: cifar100
+        subset_size: 10
         attacks: [pgd, ga, label_flip]
       
       - name: gtsrb_all_attacks
         dataset: gtsrb
+        subset_size: 10
         attacks: [pgd, ga, label_flip]
       
       - name: imagenette_all_attacks
         dataset: imagenette
+        subset_size: 10
         attacks: [pgd, ga, label_flip]
 
   label_flip_variants:
@@ -37,14 +50,23 @@ experiment_groups:
         source_class: 1
         target_class: 0
 
+  quick_test:
+    description: "Quick test of result saving"
+    experiments:
+      - name: gtsrb_quick_test
+        dataset: gtsrb
+        subset_size: 5  # Very small subset
+        epochs: 1       # Just one epoch
+        batch_size: 8   # Small batch size
+        attack: pgd     # Single attack type
+
 # Output configuration
 output:
   base_dir: "results"
   consolidated_file: "all_results.csv"
-  save_individual_results: true  # Whether to keep individual experiment CSV files
 
-# Execution settings
+# Execution configuration
 execution:
   parallel: true  # Whether to run experiments in parallel
-  max_workers: 4  # Maximum number of parallel experiments
+  max_workers: 2  # Maximum number of parallel experiments
   gpu_ids: [0]   # List of GPU IDs to use

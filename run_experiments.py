@@ -55,18 +55,28 @@ class ExperimentManager:
         """Build command for a single experiment."""
         cmd = ["python", "poison.py"]
         
-        # Add default parameters
-        for key, value in self.config['defaults'].items():
+        # Get dataset-specific defaults
+        dataset = experiment['dataset']
+        dataset_defaults = self.config.get('dataset_defaults', {}).get(dataset, {})
+        
+        # Start with global defaults
+        params = self.config['defaults'].copy()
+        
+        # Apply dataset-specific defaults
+        params.update(dataset_defaults)
+        
+        # Apply experiment-specific parameters
+        for key, value in experiment.items():
+            if key not in ['name', 'attacks', 'dataset']:
+                params[key] = value
+        
+        # Add all parameters to command
+        for key, value in params.items():
             cmd.extend([f"--{key.replace('_', '-')}", str(value)])
         
-        # Add experiment-specific parameters
-        cmd.extend(["--dataset", experiment['dataset']])
+        # Add dataset and attack
+        cmd.extend(["--dataset", dataset])
         cmd.extend(["--attack", attack])
-        
-        # Add optional parameters if present
-        for param in ['source_class', 'target_class']:
-            if param in experiment:
-                cmd.extend([f"--{param.replace('_', '-')}", str(experiment[param])])
         
         return cmd
     
@@ -76,8 +86,12 @@ class ExperimentManager:
         
         try:
             logger.info(f"Running experiment: {' '.join(cmd)}")
+            logger.info(f"Results will be saved to: {output_file}")
             # Add output directory to command
             cmd.extend(["--output-dir", str(self.results_dir)])
+            
+            logger.info(f"Creating output directory: {self.results_dir}")
+            self.results_dir.mkdir(parents=True, exist_ok=True)
             
             result = subprocess.run(
                 cmd,
@@ -172,13 +186,20 @@ class ExperimentManager:
             return
         
         try:
+            logger.info(f"Found {len(result_files)} result files to consolidate")
+            for file in result_files:
+                logger.info(f"Processing file: {file}")
+            
             # Read and combine all CSV files with progress bar
             dfs = []
             with tqdm(result_files, desc="Reading result files", unit="file", mininterval=0.1) as pbar:
                 for file in pbar:
                     if Path(file).exists():
+                        logger.info(f"Reading file: {file}")
                         df = pd.read_csv(file)
                         dfs.append(df)
+                    else:
+                        logger.warning(f"File not found: {file}")
             
             if not dfs:
                 logger.warning("No valid CSV files found to consolidate")
@@ -189,8 +210,9 @@ class ExperimentManager:
             
             # Save consolidated results
             output_file = self.results_dir / self.config['output']['consolidated_file']
+            logger.info(f"Saving consolidated results to: {output_file}")
             combined_df.to_csv(output_file, index=False)
-            logger.info(f"Consolidated results saved to {output_file}")
+            logger.info("Results consolidated successfully")
             
             # Optionally remove individual result files
             if not self.config['output']['save_individual_results']:
