@@ -53,33 +53,12 @@ class ExperimentManager:
     
     def _build_command(self, experiment: Dict[str, Any], attack: str) -> List[str]:
         """Build command for a single experiment."""
-        cmd = ["python", "poison.py"]
-        
-        # Get dataset-specific defaults
-        dataset = experiment['dataset']
-        dataset_defaults = self.config.get('dataset_defaults', {}).get(dataset, {})
-        
-        # Start with global defaults
-        params = self.config['defaults'].copy()
-        
-        # Apply dataset-specific defaults
-        params.update(dataset_defaults)
-        
-        # Apply experiment-specific parameters
-        for key, value in experiment.items():
-            if key not in ['name', 'attacks', 'dataset']:
-                params[key] = value
-        
-        # Add all parameters to command
-        for key, value in params.items():
-            # Handle special cases
-            if key == 'lr_schedule':
-                value = ','.join(map(str, value))
-            cmd.extend([f"--{key.replace('_', '-')}", str(value)])
-        
-        # Add dataset and attack
-        cmd.extend(["--dataset", dataset])
-        cmd.extend(["--attack", attack])
+        cmd = [
+            "python", "poison.py",
+            "--dataset", experiment["dataset"],
+            "--attack", attack,
+            "--output-dir", str(self.results_dir)
+        ]
         
         logger.info(f"Built command: {' '.join(cmd)}")
         return cmd
@@ -102,12 +81,6 @@ class ExperimentManager:
         try:
             logger.info(f"Running experiment: {' '.join(cmd)}")
             logger.info(f"Results will be saved to: {output_file}")
-            
-            # Add output directory to command
-            cmd.extend(["--output-dir", str(self.results_dir)])
-            
-            logger.info(f"Creating output directory: {self.results_dir}")
-            self.results_dir.mkdir(parents=True, exist_ok=True)
             
             result = subprocess.run(
                 cmd,
