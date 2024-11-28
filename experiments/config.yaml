@@ -28,6 +28,11 @@ output:
   save_model: true
   save_frequency: 10
 
+# Execution configuration
+execution:
+  max_workers: 1  # Number of parallel experiments to run
+  gpu_ids: [0]   # List of GPU IDs to use
+
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:
