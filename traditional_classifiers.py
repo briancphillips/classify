@@ -19,34 +19,45 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def extract_features_and_labels(dataset, batch_size=128):
-    """Extract features and labels from a PyTorch dataset."""
+def extract_features_and_labels(dataset, model, device, batch_size=128):
+    """Extract CNN features and labels from a PyTorch dataset."""
+    model.eval()  # Set model to evaluation mode
     dataloader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False, num_workers=0
     )
     features = []
     labels = []
 
-    for batch, targets in tqdm(dataloader, desc="Extracting features"):
-        if isinstance(batch, torch.Tensor):
-            batch = batch.numpy()
-        if isinstance(targets, torch.Tensor):
-            targets = targets.numpy()
-        features.append(batch.reshape(batch.shape[0], -1))
-        labels.append(targets)
+    with torch.no_grad():  # Disable gradient computation
+        for batch, targets in tqdm(dataloader, desc="Extracting CNN features"):
+            # Move batch to device
+            if isinstance(batch, torch.Tensor):
+                batch = batch.to(device)
+            # Extract features using CNN
+            batch_features = model.extract_features(batch)
+            # Move features back to CPU and convert to numpy
+            batch_features = batch_features.cpu().numpy()
+            if isinstance(targets, torch.Tensor):
+                targets = targets.numpy()
+            features.append(batch_features)
+            labels.append(targets)
 
     return np.vstack(features), np.concatenate(labels)
 
 
 def evaluate_traditional_classifiers(dataset_name, subset_size=10):
     """Evaluate traditional classifiers on a dataset."""
-    # Get dataset
+    # Get dataset and model
     train_dataset = get_dataset(dataset_name, train=True, subset_size=subset_size)
     test_dataset = get_dataset(dataset_name, train=False, subset_size=subset_size)
-
-    # Extract features and labels
-    X_train, y_train = extract_features_and_labels(train_dataset)
-    X_test, y_test = extract_features_and_labels(test_dataset)
+    
+    # Initialize model and move to appropriate device
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    model = get_model(dataset_name).to(device)
+    
+    # Extract CNN features and labels
+    X_train, y_train = extract_features_and_labels(train_dataset, model, device)
+    X_test, y_test = extract_features_and_labels(test_dataset, model, device)
 
     # Scale features
     scaler = StandardScaler()
@@ -95,9 +106,13 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=10):
 
 def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, dataset_name, poison_config=None):
     """Evaluate traditional classifiers on clean or poisoned data."""
-    # Extract features and labels
-    X_train, y_train = extract_features_and_labels(train_dataset)
-    X_test, y_test = extract_features_and_labels(test_dataset)
+    # Initialize model and move to appropriate device
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    model = get_model(dataset_name).to(device)
+    
+    # Extract CNN features and labels
+    X_train, y_train = extract_features_and_labels(train_dataset, model, device)
+    X_test, y_test = extract_features_and_labels(test_dataset, model, device)
 
     # Scale features
     scaler = StandardScaler()
@@ -173,8 +188,8 @@ def run_traditional_classifiers(dataset_name, poison_config=None, subset_size=10
     test_dataset = get_dataset(dataset_name, train=False, subset_size=subset_size)
 
     # Extract features and labels
-    X_train, y_train = extract_features_and_labels(train_dataset)
-    X_test, y_test = extract_features_and_labels(test_dataset)
+    X_train, y_train = extract_features_and_labels(train_dataset, get_model(dataset_name), torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
+    X_test, y_test = extract_features_and_labels(test_dataset, get_model(dataset_name), torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"))
 
     # Scale features
     scaler = StandardScaler()
