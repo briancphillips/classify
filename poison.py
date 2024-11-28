@@ -95,16 +95,27 @@ def run_poison_experiment(
         
         # Run attack
         results = {}
-        if attack == "pgd":
-            results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
-        elif attack == "gradient_ascent":
-            results = run_gradient_ascent(model, train_loader, test_loader, poison_ratio)
-        elif attack == "label_flip_random_random":
-            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random")
-        elif attack == "label_flip_random_target":
-            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="target")
-        elif attack == "label_flip_source_target":
-            results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="source_target")
+        attack_map = {
+            "pgd": "pgd",
+            "gradient_ascent": "gradient_ascent",
+            "label_flip_random_random": "label_flip_random_random",
+            "label_flip_random_target": "label_flip_random_target",
+            "label_flip_source_target": "label_flip_source_target"
+        }
+        if attack in attack_map:
+            attack_name = attack_map[attack]
+            if attack_name == "pgd":
+                results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
+            elif attack_name == "gradient_ascent":
+                results = run_gradient_ascent(model, train_loader, test_loader, poison_ratio)
+            elif attack_name == "label_flip_random_random":
+                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random")
+            elif attack_name == "label_flip_random_target":
+                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="target")
+            elif attack_name == "label_flip_source_target":
+                results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="source_target")
+            else:
+                raise ValueError(f"Unknown attack type: {attack}")
         else:
             raise ValueError(f"Unknown attack type: {attack}")
             
@@ -129,7 +140,8 @@ def run_pgd_attack(model, train_loader, test_loader, poison_ratio):
         pgd_alpha=0.1,
         pgd_steps=40
     )
-    attack = PGDPoisonAttack(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    attack = PGDPoisonAttack(config, device)
     return attack.poison_dataset(train_loader.dataset, model)
 
 def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
@@ -141,7 +153,8 @@ def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
         ga_learning_rate=0.1,
         ga_steps=40
     )
-    attack = GradientAscentAttack(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    attack = GradientAscentAttack(config, device)
     return attack.poison_dataset(train_loader.dataset, model)
 
 def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"):
@@ -159,7 +172,8 @@ def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"
         source_class=0,  # Only used for source_target mode
         target_class=1   # Only used for target modes
     )
-    attack = LabelFlipAttack(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    attack = LabelFlipAttack(config, device)
     return attack.poison_dataset(train_loader.dataset, model)
 
 if __name__ == "__main__":
