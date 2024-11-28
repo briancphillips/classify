@@ -250,16 +250,43 @@ class ExperimentManager:
             logger.error(f"Error consolidating results: {str(e)}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Run poisoning experiments")
-    parser.add_argument(
-        "--config",
-        default="experiments/config.yaml",
-        help="Path to experiment configuration file"
-    )
-    args = parser.parse_args()
-    
-    manager = ExperimentManager(args.config)
-    manager.run_experiments()
+    try:
+        # Enable debugging for torch.multiprocessing
+        if sys.platform == 'darwin':  # macOS specific
+            import torch.multiprocessing as mp
+            mp.set_start_method('spawn')
+
+        parser = argparse.ArgumentParser(description="Run poisoning experiments")
+        parser.add_argument(
+            "--config",
+            default="experiments/config.yaml",
+            help="Path to experiment configuration file"
+        )
+        args = parser.parse_args()
+        
+        # Set up logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        
+        # Log system info
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"Using device: {device}")
+        if torch.cuda.is_available():
+            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+            logger.info(f"CUDA Version: {torch.version.cuda}")
+        
+        # Create and run experiment manager
+        manager = ExperimentManager(args.config)
+        manager.run_experiments()
+        
+    except KeyboardInterrupt:
+        logger.info("Training interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        error_logger.exception("An error occurred during training:")
+        raise
 
 if __name__ == "__main__":
     main()
