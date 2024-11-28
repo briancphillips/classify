@@ -10,13 +10,13 @@ defaults:
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.0001
+  learning_rate: 0.01
   momentum: 0.9
   weight_decay: 5e-4
   grad_clip: 1.0
   
   # Learning rate schedule
-  lr_schedule: [60, 120, 160]
+  lr_schedule: [30, 60, 90]
   lr_factor: 0.2
   
   # SWA settings
@@ -40,8 +40,8 @@ dataset_defaults:
     epochs: 200
     model: wrn-28-10
     num_classes: 100
-    batch_size: 32
-    learning_rate: 0.0001
+    batch_size: 64
+    learning_rate: 0.01
     weight_decay: 5e-4
     grad_clip: 1.0
     use_mixup: false
