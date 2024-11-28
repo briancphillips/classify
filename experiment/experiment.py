@@ -48,9 +48,9 @@ class Trainer:
             self.swa_model = AveragedModel(model)
             self.swa_scheduler = SWALR(
                 optimizer,
-                swa_lr=config.get('swa_lr', 0.05)
+                swa_lr=float(config.get('swa_lr', 0.05))
             )
-            self.swa_start = config.get('swa_start', 160)
+            self.swa_start = int(config.get('swa_start', 160))
         else:
             self.swa_model = None
             self.swa_scheduler = None
@@ -64,7 +64,23 @@ class Trainer:
             'inference_time': 0,
         }
         
+        # Initialize memory tracking
+        if self.device.type == 'cuda':
+            self.track_memory_usage()
+        
         logger.info(f"Initialized trainer with config: {config}")
+        
+    def track_memory_usage(self):
+        """Log GPU memory usage."""
+        if not torch.cuda.is_available():
+            return
+            
+        total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**2
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        cached = torch.cuda.memory_reserved() / 1024**2
+        
+        logger.info(f"GPU Memory: {allocated:.1f}MB allocated, {cached:.1f}MB cached, "
+                   f"{total_memory:.1f}MB total")
 
     def mixup_data(self, x, y, alpha=1.0):
         """Performs mixup on the input and target."""
@@ -92,48 +108,60 @@ class Trainer:
         total = 0
         batch_count = len(loader)
         
-        for batch_idx, (inputs, targets) in enumerate(loader, 1):
-            # Move to device and get batch size
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
-            batch_size = inputs.size(0)
-            
-            # Mixup
-            if self.use_mixup:
-                inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
+        # Track initial memory usage
+        self.track_memory_usage()
+        
+        # Use torch.cuda.amp.autocast() for mixed precision training
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            for batch_idx, (inputs, targets) in enumerate(loader, 1):
+                # Move to device and get batch size
+                inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
+                batch_size = inputs.size(0)
                 
-            # Forward pass
-            with autocast(enabled=self.use_amp):
+                # Mixup
+                if self.use_mixup:
+                    inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
+                
+                # Forward pass
                 outputs = self.model(inputs)
                 if self.use_mixup:
                     loss = self.mixup_criterion(outputs, targets_a, targets_b, lam)
                 else:
                     loss = self.criterion(outputs, targets)
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            if self.use_amp:
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                loss.backward()
-                self.optimizer.step()
-            
-            # Update metrics
-            total_loss += loss.item() * batch_size
-            _, predicted = outputs.max(1)
-            total += batch_size
-            if self.use_mixup:
-                correct += (lam * predicted.eq(targets_a).sum().item()
-                          + (1 - lam) * predicted.eq(targets_b).sum().item())
-            else:
-                correct += predicted.eq(targets).sum().item()
-            
-            # Log progress
-            if batch_idx % max(1, batch_count // 10) == 0:
-                logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
-                          f'Loss: {loss.item():.4f} '
-                          f'Acc: {100. * correct/total:.2f}%')
+                
+                # Backward pass
+                self.optimizer.zero_grad(set_to_none=True)
+                if self.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
+                
+                # Update metrics
+                total_loss += loss.item() * batch_size
+                _, predicted = outputs.max(1)
+                total += batch_size
+                if self.use_mixup:
+                    correct += (lam * predicted.eq(targets_a).sum().item()
+                              + (1 - lam) * predicted.eq(targets_b).sum().item())
+                else:
+                    correct += predicted.eq(targets).sum().item()
+                
+                # Log progress and memory usage
+                if batch_idx % max(1, batch_count // 5) == 0:
+                    logger.info(f'Epoch: {epoch} [{batch_idx}/{batch_count}] '
+                              f'Loss: {loss.item():.4f} '
+                              f'Acc: {100. * correct/total:.2f}%')
+                    self.track_memory_usage()
+                
+                # Clear GPU cache and delete intermediate tensors
+                if batch_idx % 50 == 0:
+                    del outputs, loss
+                    if self.use_mixup:
+                        del targets_a, targets_b
+                    torch.cuda.empty_cache()
         
         # Calculate epoch metrics
         avg_loss = total_loss / total
@@ -142,6 +170,9 @@ class Trainer:
         # Update metrics history
         self.metrics['train_losses'].append(avg_loss)
         self.metrics['train_accs'].append(accuracy)
+        
+        # Final memory check
+        self.track_memory_usage()
         
         return avg_loss, accuracy
 
@@ -153,16 +184,18 @@ class Trainer:
         total = 0
         batch_count = len(loader)
         
-        with torch.no_grad():
+        # Track initial memory usage
+        self.track_memory_usage()
+        
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.use_amp):
             for batch_idx, (inputs, targets) in enumerate(loader, 1):
                 # Move to device and get batch size
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
                 batch_size = inputs.size(0)
                 
                 # Forward pass
-                with autocast(enabled=self.use_amp):
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, targets)
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
                 
                 # Update metrics
                 total_loss += loss.item() * batch_size
@@ -170,11 +203,17 @@ class Trainer:
                 total += batch_size
                 correct += predicted.eq(targets).sum().item()
                 
-                # Log progress
-                if batch_idx % max(1, batch_count // 5) == 0:
+                # Log progress and memory usage
+                if batch_idx % max(1, batch_count // 3) == 0:
                     logger.info(f'Eval: [{batch_idx}/{batch_count}] '
                               f'Loss: {loss.item():.4f} '
                               f'Acc: {100. * correct/total:.2f}%')
+                    self.track_memory_usage()
+                
+                # Clear intermediate tensors
+                if batch_idx % 50 == 0:
+                    del outputs, loss
+                    torch.cuda.empty_cache()
         
         # Calculate epoch metrics
         avg_loss = total_loss / total
@@ -183,6 +222,9 @@ class Trainer:
         # Update metrics history
         self.metrics['val_losses'].append(avg_loss)
         self.metrics['val_accs'].append(accuracy)
+        
+        # Final memory check
+        self.track_memory_usage()
         
         return avg_loss, accuracy
 
