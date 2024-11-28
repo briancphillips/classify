@@ -9,6 +9,7 @@ import torch
 import os
 import json
 import yaml
+from typing import Dict, Any, Tuple
 from config.types import PoisonType
 from config.dataclasses import PoisonConfig
 from experiment import PoisonExperiment
@@ -20,7 +21,7 @@ from models.architectures import get_model
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from attacks.pgd import PGDPoisonAttack
-from attacks.gradient_ascent import GradientAscentPoisonAttack
+from attacks.gradient_ascent import GradientAscentAttack
 from attacks.label_flip import LabelFlipPoisonAttack
 
 logger = get_logger(__name__)
@@ -140,7 +141,7 @@ def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
         ga_learning_rate=0.1,
         ga_steps=40
     )
-    attack = GradientAscentPoisonAttack(config)
+    attack = GradientAscentAttack(config)
     return attack.poison_dataset(train_loader.dataset, model)
 
 def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"):
