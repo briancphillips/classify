@@ -78,12 +78,22 @@ class ExperimentManager:
         cmd.extend(["--dataset", dataset])
         cmd.extend(["--attack", attack])
         
+        logger.info(f"Built command: {' '.join(cmd)}")
         return cmd
     
     def _run_single_experiment(self, cmd: List[str], experiment_name: str, attack: str) -> str:
         """Run a single experiment and return its results file path."""
         # Build the expected output filename based on dataset and attack
-        dataset = next(arg for i, arg in enumerate(cmd) if arg == "--dataset" and i < len(cmd) - 1)
+        try:
+            dataset_idx = cmd.index("--dataset") + 1
+            dataset = cmd[dataset_idx] if dataset_idx < len(cmd) else None
+            if not dataset:
+                logger.error("Could not find dataset argument in command")
+                return None
+        except ValueError:
+            logger.error("--dataset not found in command")
+            return None
+            
         output_file = self.results_dir / f"{dataset}_{attack}_results.csv"
         
         try:
@@ -111,8 +121,8 @@ class ExperimentManager:
                 else:
                     logger.error(f"Result file not found after experiment: {output_file}")
                     logger.error("Command output:")
-                    logger.error(result.stdout)
-                    logger.error(result.stderr)
+                    logger.error(f"stdout: {result.stdout}")
+                    logger.error(f"stderr: {result.stderr}")
                     return None
         except subprocess.CalledProcessError as e:
             error_logger.log_error(e, f"Experiment failed: {experiment_name}_{attack}")
