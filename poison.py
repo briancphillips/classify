@@ -71,14 +71,14 @@ def parse_args():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=30,
-        help="Number of epochs (default: 30)",
+        default=200,
+        help="Number of epochs (default: 200)",
     )
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=0.001,
-        help="Learning rate (default: 0.001)",
+        default=0.1,
+        help="Learning rate (default: 0.1)",
     )
     parser.add_argument(
         "--batch-size",
@@ -89,8 +89,146 @@ def parse_args():
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=2,
-        help="Number of worker processes for data loading (default: 2)",
+        default=4,
+        help="Number of worker processes for data loading (default: 4)",
+    )
+
+    # Model parameters
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="wrn-28-10",
+        help="Model architecture to use",
+    )
+    parser.add_argument(
+        "--num-classes",
+        type=int,
+        default=100,
+        help="Number of classes in the dataset",
+    )
+
+    # Optimizer parameters
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="SGD",
+        help="Optimizer to use (default: SGD)",
+    )
+    parser.add_argument(
+        "--momentum",
+        type=float,
+        default=0.9,
+        help="Momentum for SGD optimizer (default: 0.9)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=5e-4,
+        help="Weight decay (default: 5e-4)",
+    )
+
+    # Learning rate schedule
+    parser.add_argument(
+        "--lr-schedule",
+        type=str,
+        default="[60, 120, 160]",
+        help="List of epochs to reduce learning rate",
+    )
+    parser.add_argument(
+        "--lr-factor",
+        type=float,
+        default=0.2,
+        help="Factor to reduce learning rate by (default: 0.2)",
+    )
+
+    # Advanced training features
+    parser.add_argument(
+        "--use-amp",
+        type=str,
+        default="True",
+        help="Use automatic mixed precision training",
+    )
+    parser.add_argument(
+        "--use-swa",
+        type=str,
+        default="True",
+        help="Use stochastic weight averaging",
+    )
+    parser.add_argument(
+        "--swa-start",
+        type=int,
+        default=160,
+        help="Epoch to start SWA from (default: 160)",
+    )
+    parser.add_argument(
+        "--swa-lr",
+        type=float,
+        default=0.05,
+        help="SWA learning rate (default: 0.05)",
+    )
+    parser.add_argument(
+        "--use-mixup",
+        type=str,
+        default="True",
+        help="Use mixup data augmentation",
+    )
+    parser.add_argument(
+        "--label-smoothing",
+        type=float,
+        default=0.1,
+        help="Label smoothing factor (default: 0.1)",
+    )
+
+    # Early stopping
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=20,
+        help="Early stopping patience (default: 20)",
+    )
+    parser.add_argument(
+        "--min-delta",
+        type=float,
+        default=0.001,
+        help="Early stopping minimum delta (default: 0.001)",
+    )
+
+    # Data augmentation
+    parser.add_argument(
+        "--random-crop",
+        type=str,
+        default="True",
+        help="Use random crop augmentation",
+    )
+    parser.add_argument(
+        "--random-horizontal-flip",
+        type=str,
+        default="True",
+        help="Use random horizontal flip augmentation",
+    )
+    parser.add_argument(
+        "--normalize",
+        type=str,
+        default="True",
+        help="Normalize input images",
+    )
+    parser.add_argument(
+        "--cutout",
+        type=str,
+        default="True",
+        help="Use cutout augmentation",
+    )
+    parser.add_argument(
+        "--cutout-length",
+        type=int,
+        default=16,
+        help="Cutout patch length (default: 16)",
+    )
+    parser.add_argument(
+        "--pin-memory",
+        type=str,
+        default="True",
+        help="Use pinned memory for data loading",
     )
 
     # Device parameters
@@ -214,6 +352,27 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         subset_size=args.subset_size,
+        model=args.model,
+        num_classes=args.num_classes,
+        optimizer=args.optimizer,
+        momentum=args.momentum,
+        weight_decay=args.weight_decay,
+        lr_schedule=args.lr_schedule,
+        lr_factor=args.lr_factor,
+        use_amp=args.use_amp.lower() == "true",
+        use_swa=args.use_swa.lower() == "true",
+        swa_start=args.swa_start,
+        swa_lr=args.swa_lr,
+        use_mixup=args.use_mixup.lower() == "true",
+        label_smoothing=args.label_smoothing,
+        patience=args.patience,
+        min_delta=args.min_delta,
+        random_crop=args.random_crop.lower() == "true",
+        random_horizontal_flip=args.random_horizontal_flip.lower() == "true",
+        normalize=args.normalize.lower() == "true",
+        cutout=args.cutout.lower() == "true",
+        cutout_length=args.cutout_length,
+        pin_memory=args.pin_memory.lower() == "true",
     )
 
     try:
