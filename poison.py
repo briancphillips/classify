@@ -25,6 +25,8 @@ from attacks.pgd import PGDPoisonAttack
 from attacks.gradient_ascent import GradientAscentAttack
 from attacks.label_flip import LabelFlipAttack
 
+# Initialize logging
+setup_logging()
 logger = get_logger(__name__)
 error_logger = get_error_logger()
 

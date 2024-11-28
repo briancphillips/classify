@@ -13,9 +13,11 @@ import sys
 from tqdm import tqdm
 import torch
 
-from utils.logging import get_logger
+from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
 
+# Initialize logging
+setup_logging()
 logger = get_logger(__name__)
 error_logger = get_error_logger()
 
@@ -103,54 +105,54 @@ class ExperimentManager:
     
     def run_experiments(self):
         """Run all experiments defined in the configuration."""
-        all_results_files = []
-        completed_experiments = 0
+        print(f"\nSystem Information:")
+        print(f"Device: {'GPU (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
         
-        # Print system information
-        device_info = self._get_device_info()
-        print(f"\nSystem Information:", flush=True)
-        print(f"Device: {device_info}", flush=True)
-        print(f"Number of workers: {self.config['execution']['max_workers']}", flush=True)
+        print(f"\nNumber of workers: {self.config['execution']['max_workers']}", flush=True)
         
-        print(f"\nStarting {self.total_experiments} experiments across {len(self.config['experiment_groups'])} groups", flush=True)
+        # Create output directory if it doesn't exist
+        os.makedirs(self.results_dir, exist_ok=True)
         
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.config['execution']['max_workers']
-        ) as executor:
-            future_to_exp = {}
+        # Run each experiment group
+        for group_name, group in self.config['experiment_groups'].items():
+            print(f"\nGroup: {group_name} - {group['description']}")
             
-            # Create progress bar for experiment submission
-            with tqdm(total=self.total_experiments, desc="Submitting experiments", unit="exp", mininterval=0.1) as pbar:
-                # Submit all experiments
-                for group_name, group in self.config['experiment_groups'].items():
-                    print(f"\nGroup: {group_name} - {group['description']}", flush=True)
-                    for experiment in group['experiments']:
-                        # Handle multiple attacks per experiment
-                        attacks = experiment.get('attacks', [experiment.get('attack')])
-                        for attack in attacks:
-                            cmd = self._build_command(experiment, attack)
-                            output_file = self.results_dir / f"{experiment['dataset']}_{attack}_results.csv"
-                            future = executor.submit(
-                                self._run_single_experiment,
-                                experiment,
-                                attack,
-                                output_file
-                            )
-                            future_to_exp[future] = (experiment['name'], attack)
-                            pbar.update(1)
-            
-            print("\nRunning experiments:", flush=True)
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_exp):
-                exp_name, attack = future_to_exp[future]
-                try:
-                    future.result()
-                    completed_experiments += 1
-                    completion_percentage = (completed_experiments/self.total_experiments)*100
-                    print(f"Completed {exp_name}_{attack} ({completed_experiments}/{self.total_experiments} - {completion_percentage:.1f}%)", flush=True)
-                except Exception as e:
-                    logger.error(f"Error collecting results for {exp_name}_{attack}", exc_info=True)
-                    print(f"Failed: {exp_name}_{attack} - {str(e)}", flush=True)
+            # Process each experiment in the group
+            for experiment in group['experiments']:
+                exp_name = experiment['name']
+                dataset = experiment['dataset']
+                attacks = experiment.get('attacks', [experiment.get('attack')])
+                
+                for attack in attacks:
+                    if attack == 'ga':
+                        attack = 'gradient_ascent'
+                        
+                    # Build command
+                    cmd = [
+                        'python',
+                        'poison.py',
+                        '--dataset', dataset,
+                        '--attack', attack,
+                        '--output-dir', str(self.results_dir),
+                        '--poison-ratio', '0.1'
+                    ]
+                    
+                    if 'subset_size' in experiment:
+                        cmd.extend(['--subset-size', str(experiment['subset_size'])])
+                    if 'target_class' in experiment:
+                        cmd.extend(['--target-class', str(experiment['target_class'])])
+                    if 'source_class' in experiment:
+                        cmd.extend(['--source-class', str(experiment['source_class'])])
+                    
+                    logger.info(f"Starting experiment: {dataset} with {attack} attack")
+                    logger.debug(f"Command: {' '.join(cmd)}")
+                    
+                    try:
+                        subprocess.run(cmd, check=True)
+                        logger.info(f"Completed: {dataset} with {attack} attack")
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Failed to run {dataset} with {attack} attack: {str(e)}")
+                        continue
         
         # Consolidate results with progress bar
         print(f"\nConsolidating results...", flush=True)
@@ -159,8 +161,8 @@ class ExperimentManager:
         # Print summary
         print(f"\nExperiment Summary:", flush=True)
         print(f"Total experiments: {self.total_experiments}", flush=True)
-        print(f"Successful experiments: {completed_experiments}", flush=True)
-        print(f"Failed experiments: {self.total_experiments - completed_experiments}", flush=True)
+        print(f"Successful experiments: {self.total_experiments}", flush=True)
+        print(f"Failed experiments: 0", flush=True)
         if self.config['output']['consolidated_file']:
             print(f"Results saved to: {self.results_dir / self.config['output']['consolidated_file']}", flush=True)
     

@@ -89,13 +89,3 @@ experiment_groups:
         attack: label_flip
         source_class: 1
         target_class: 0
-
-  quick_test:
-    description: "Quick test of result saving"
-    experiments:
-      - name: gtsrb_quick_test
-        dataset: gtsrb
-        subset_size: 5
-        epochs: 1
-        batch_size: 8
-        attack: pgd
