@@ -4,52 +4,45 @@ defaults:
   num_workers: 4
   pin_memory: true
   use_amp: true
-  use_swa: true  # Enable SWA for better final model
-  use_mixup: true
-  mixup_alpha: 0.2
-  label_smoothing: 0.05
+  use_swa: false  # Disable SWA as it's not in verified config
+  use_mixup: false  # Disable mixup as it's not in verified config
+  label_smoothing: 0.0  # Disable label smoothing as it's not in verified config
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.05
+  learning_rate: 0.1  # Verified initial learning rate
   momentum: 0.9
-  weight_decay: 1e-4
+  weight_decay: 5e-4  # 0.0005 as specified
   grad_clip: 1.0
   
-  # Learning rate schedule - adjusted for longer training
-  lr_schedule: [60, 120, 160]  # Extended schedule
+  # Learning rate schedule
+  lr_schedule: [60, 120, 160]
   lr_factor: 0.2
-  
-  # SWA settings
-  swa_start: 160  # Start SWA after last LR drop
-  swa_lr: 0.01  # Increased SWA learning rate
-  
-  # Early stopping
-  patience: 30  # Increased patience for longer training
-  min_delta: 0.001
   
   # Data augmentation
   random_crop: true
   random_horizontal_flip: true
   normalize: true
-  cutout: true  # Re-enable cutout with current settings
+  normalize_mean: [0.5071, 0.4867, 0.4408]  # CIFAR-100 specific means
+  normalize_std: [0.2675, 0.2565, 0.2761]   # CIFAR-100 specific stds
+  cutout: false  # Not in verified config
   cutout_length: 8
 
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:
-    epochs: 200  # Extended total epochs
-    model: wrn-28-10
-    num_classes: 100
+    epochs: 200
     batch_size: 128
-    learning_rate: 0.05
-    weight_decay: 1e-4
+    learning_rate: 0.1
+    weight_decay: 5e-4
     grad_clip: 1.0
     use_amp: true
-    use_swa: true
-    use_mixup: true
+    use_swa: false
+    use_mixup: false
     mixup_alpha: 0.2
-    label_smoothing: 0.05
+    label_smoothing: 0.0
+    model: wrn-28-10
+    num_classes: 100
     
   gtsrb:
     epochs: 10
