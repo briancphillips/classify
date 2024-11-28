@@ -131,8 +131,8 @@ def parse_args():
     parser.add_argument(
         "--lr-schedule",
         type=str,
-        default="[60, 120, 160]",
-        help="List of epochs to reduce learning rate",
+        default="60,120,160",
+        help="Comma-separated list of epochs to reduce learning rate",
     )
     parser.add_argument(
         "--lr-factor",
@@ -334,6 +334,17 @@ def main():
     log_level = logging.DEBUG if args.debug else logging.INFO
     logger = setup_logging(level=log_level)
 
+    # Convert string arguments to proper types
+    args.lr_schedule = [int(x) for x in args.lr_schedule.split(',')]
+    args.use_amp = args.use_amp.lower() == "true"
+    args.use_swa = args.use_swa.lower() == "true"
+    args.use_mixup = args.use_mixup.lower() == "true"
+    args.random_crop = args.random_crop.lower() == "true"
+    args.random_horizontal_flip = args.random_horizontal_flip.lower() == "true"
+    args.normalize = args.normalize.lower() == "true"
+    args.cutout = args.cutout.lower() == "true"
+    args.pin_memory = args.pin_memory.lower() == "true"
+
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -359,20 +370,20 @@ def main():
         weight_decay=args.weight_decay,
         lr_schedule=args.lr_schedule,
         lr_factor=args.lr_factor,
-        use_amp=args.use_amp.lower() == "true",
-        use_swa=args.use_swa.lower() == "true",
+        use_amp=args.use_amp,
+        use_swa=args.use_swa,
         swa_start=args.swa_start,
         swa_lr=args.swa_lr,
-        use_mixup=args.use_mixup.lower() == "true",
+        use_mixup=args.use_mixup,
         label_smoothing=args.label_smoothing,
         patience=args.patience,
         min_delta=args.min_delta,
-        random_crop=args.random_crop.lower() == "true",
-        random_horizontal_flip=args.random_horizontal_flip.lower() == "true",
-        normalize=args.normalize.lower() == "true",
-        cutout=args.cutout.lower() == "true",
+        random_crop=args.random_crop,
+        random_horizontal_flip=args.random_horizontal_flip,
+        normalize=args.normalize,
+        cutout=args.cutout,
         cutout_length=args.cutout_length,
-        pin_memory=args.pin_memory.lower() == "true",
+        pin_memory=args.pin_memory,
     )
 
     try:
