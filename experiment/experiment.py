@@ -8,6 +8,8 @@ import numpy as np
 import time
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import MultiStepLR
+from torch.cuda.amp import autocast, GradScaler
+from torch.optim.swa_utils import AveragedModel, SWALR
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
@@ -29,6 +31,28 @@ class Trainer:
         self.optimizer = optimizer
         self.device = device
         self.config = config
+        
+        # Initialize training components based on config
+        self.use_amp = config.get('use_amp', True) and self.device.type == 'cuda'
+        self.use_swa = config.get('use_swa', True)
+        self.use_mixup = config.get('use_mixup', True)
+        self.label_smoothing = config.get('label_smoothing', 0.1)
+        
+        # Setup mixed precision training
+        self.scaler = GradScaler() if self.use_amp else None
+        
+        # Setup SWA if enabled
+        if self.use_swa:
+            self.swa_model = AveragedModel(model)
+            self.swa_scheduler = SWALR(
+                optimizer,
+                swa_lr=config.get('swa_lr', 0.05)
+            )
+            self.swa_start = config.get('swa_start', 160)
+        else:
+            self.swa_model = None
+            self.swa_scheduler = None
+        
         self.metrics = {
             'train_losses': [],
             'val_losses': [],
@@ -37,44 +61,107 @@ class Trainer:
             'training_time': 0,
             'inference_time': 0,
         }
+        
+        logger.info(f"Initialized trainer with config: {config}")
+
+    def mixup_data(self, x, y, alpha=1.0):
+        """Performs mixup on the input and target."""
+        if alpha > 0:
+            lam = np.random.beta(alpha, alpha)
+        else:
+            lam = 1
+
+        batch_size = x.size()[0]
+        index = torch.randperm(batch_size).to(self.device)
+
+        mixed_x = lam * x + (1 - lam) * x[index]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+
+    def mixup_criterion(self, pred, y_a, y_b, lam):
+        """Mixup loss function."""
+        return lam * self.criterion(pred, y_a) + (1 - lam) * self.criterion(pred, y_b)
 
     def train_epoch(self, loader, epoch):
         self.model.train()
         total_loss = 0
         total_correct = 0
-        for batch in loader:
+        total = 0
+        
+        for batch in tqdm(loader, desc=f'Epoch {epoch+1}', leave=False):
             inputs, labels = batch
             inputs, labels = inputs.to(self.device), labels.to(self.device)
+            
+            # Apply mixup if enabled and within mixup epochs
+            if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
+                inputs, labels_a, labels_b, lam = self.mixup_data(inputs, labels)
+                
             self.optimizer.zero_grad()
-            outputs = self.model(inputs)
-            loss = self.criterion(outputs, labels)
-            loss.backward()
-            self.optimizer.step()
+            
+            # Mixed precision training
+            with autocast() if self.use_amp else nullcontext():
+                outputs = self.model(inputs)
+                if self.use_mixup and epoch < self.config.get('mixup_epochs', 150):
+                    loss = self.mixup_criterion(outputs, labels_a, labels_b, lam)
+                else:
+                    loss = self.criterion(outputs, labels)
+            
+            if self.use_amp:
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                loss.backward()
+                self.optimizer.step()
+            
             total_loss += loss.item()
-            _, predicted = torch.max(outputs, 1)
-            total_correct += (predicted == labels).sum().item()
-        accuracy = total_correct / len(loader.dataset)
-        self.metrics['train_losses'].append(total_loss / len(loader))
+            
+            # Calculate accuracy
+            if not self.use_mixup or epoch >= self.config.get('mixup_epochs', 150):
+                _, predicted = outputs.max(1)
+                total += labels.size(0)
+                total_correct += predicted.eq(labels).sum().item()
+            
+        # Update SWA model if enabled
+        if self.use_swa and epoch >= self.swa_start:
+            self.swa_model.update_parameters(self.model)
+            self.swa_scheduler.step()
+        
+        accuracy = total_correct / total if total > 0 else 0
+        avg_loss = total_loss / len(loader)
+        
+        self.metrics['train_losses'].append(avg_loss)
         self.metrics['train_accs'].append(accuracy)
-        return {'train_loss': total_loss / len(loader), 'train_acc': accuracy}
+        
+        return {'train_loss': avg_loss, 'train_acc': accuracy}
 
     def evaluate(self, loader, epoch):
-        self.model.eval()
+        # Use SWA model for evaluation if enabled and after SWA start epoch
+        model_to_eval = self.swa_model if self.use_swa and epoch >= self.swa_start else self.model
+        model_to_eval.eval()
+        
         total_loss = 0
         total_correct = 0
+        total = 0
+        
         with torch.no_grad():
-            for batch in loader:
-                inputs, labels = batch
+            for inputs, labels in tqdm(loader, desc='Evaluating', leave=False):
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.model(inputs)
+                outputs = model_to_eval(inputs)
                 loss = self.criterion(outputs, labels)
+                
                 total_loss += loss.item()
-                _, predicted = torch.max(outputs, 1)
-                total_correct += (predicted == labels).sum().item()
-        accuracy = total_correct / len(loader.dataset)
-        self.metrics['val_losses'].append(total_loss / len(loader))
+                _, predicted = outputs.max(1)
+                total += labels.size(0)
+                total_correct += predicted.eq(labels).sum().item()
+        
+        accuracy = total_correct / total
+        avg_loss = total_loss / len(loader)
+        
+        self.metrics['val_losses'].append(avg_loss)
         self.metrics['val_accs'].append(accuracy)
-        return {'val_loss': total_loss / len(loader), 'val_acc': accuracy}
+        
+        return {'val_loss': avg_loss, 'val_acc': accuracy}
 
     def get_metrics(self):
         self.metrics['final_train_loss'] = self.metrics['train_losses'][-1]
