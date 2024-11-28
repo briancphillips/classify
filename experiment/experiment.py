@@ -216,6 +216,8 @@ class PoisonExperiment:
             'learning_rate': self.learning_rate,
             'weight_decay': 0.0001,
             'optimizer': 'Adam',
+            'early_stopping_patience': 10,  # Added early stopping config
+            'early_stopping_min_delta': 0.001,  # Minimum change to be considered an improvement
         }
         
         criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -234,14 +236,29 @@ class PoisonExperiment:
         )
 
         # Train clean model
+        patience = trainer_config['early_stopping_patience']
+        min_delta = trainer_config['early_stopping_min_delta']
+        patience_counter = 0
+        best_val_loss = float('inf')
+        
         for epoch in range(start_epoch, self.epochs):
             train_metrics = trainer.train_epoch(self.train_loader, epoch)
             val_metrics = trainer.evaluate(self.test_loader, epoch)
+            
+            # Early stopping check
+            val_loss = val_metrics['val_loss']
+            if val_loss < (best_val_loss - min_delta):
+                best_val_loss = val_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                
             logger.info(
                 f"Epoch {epoch+1}/{self.epochs} - "
                 f"Train Loss: {train_metrics['train_loss']:.4f} - "
                 f"Val Loss: {val_metrics['val_loss']:.4f} - "
-                f"Val Acc: {val_metrics['val_acc']:.2f}%"
+                f"Val Acc: {val_metrics['val_acc']:.2f}% - "
+                f"Early Stop Counter: {patience_counter}/{patience}"
             )
             
             # Save checkpoint
@@ -256,12 +273,22 @@ class PoisonExperiment:
                     'best_acc': best_acc,
                     'optimizer': optimizer.state_dict(),
                     'swa_state_dict': trainer.swa_model.state_dict() if trainer.use_swa else None,
-                    'metrics': trainer.get_metrics()
+                    'metrics': trainer.get_metrics(),
+                    'early_stopping_state': {
+                        'counter': patience_counter,
+                        'best_val_loss': best_val_loss,
+                        'min_delta': min_delta
+                    }
                 },
                 is_best=is_best,
                 checkpoint_dir=self.checkpoint_dir,
                 filename=f"clean_model_latest.pth.tar"
             )
+            
+            # Early stopping
+            if patience_counter >= patience:
+                logger.info(f"Early stopping triggered after {epoch + 1} epochs")
+                break
 
         # Get final training metrics
         training_metrics = trainer.get_metrics()
