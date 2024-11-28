@@ -94,8 +94,60 @@ def run_poison_experiment(
         model = get_model(dataset)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
-        optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+        
+        # Get training parameters from config
+        if dataset.lower() == "cifar100":
+            from config.config import default_config
+            config = default_config
+            epochs = config.epochs
+            lr = config.learning_rate
+            momentum = config.momentum
+            weight_decay = config.weight_decay
+            lr_schedule = config.lr_schedule
+            lr_factor = config.lr_factor
+            
+            optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_schedule, gamma=lr_factor)
+        else:  # gtsrb and imagenette - use their original settings
+            epochs = 10
+            lr = 0.001
+            optimizer = optim.Adam(model.parameters(), lr=lr)
+            scheduler = None
+            
         criterion = nn.CrossEntropyLoss()
+        
+        # Train model on clean data first
+        logger.info("Training model on clean data...")
+        model.train()
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for batch_idx, (data, targets) in enumerate(train_loader):
+                data, targets = data.to(device), targets.to(device)
+                optimizer.zero_grad()
+                outputs = model(data)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+                
+            if scheduler is not None:
+                scheduler.step()
+            
+            # Print progress every epoch for short training, every 10 epochs for long training
+            if epochs <= 10 or (epoch + 1) % 10 == 0:
+                model.eval()
+                correct = 0
+                total = 0
+                with torch.no_grad():
+                    for data, targets in test_loader:
+                        data, targets = data.to(device), targets.to(device)
+                        outputs = model(data)
+                        _, predicted = outputs.max(1)
+                        total += targets.size(0)
+                        correct += predicted.eq(targets).sum().item()
+                accuracy = 100. * correct / total
+                logger.info(f'Clean Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(train_loader):.3f} Test Accuracy: {accuracy:.2f}%')
+                model.train()
         
         # Evaluate original model accuracy
         model.eval()
@@ -109,9 +161,9 @@ def run_poison_experiment(
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
         original_accuracy = 100. * correct / total
+        logger.info(f'Original model accuracy: {original_accuracy:.2f}%')
         
         # Run attack
-        results = {}
         if attack == "pgd":
             poisoned_dataset, poison_results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
         elif attack == "ga" or attack == "gradient_ascent":
@@ -134,10 +186,22 @@ def run_poison_experiment(
             pin_memory=True
         )
         
+        # Reset model and optimizer for training on poisoned data
+        model = get_model(dataset)
+        model = model.to(device)
+        
+        if dataset.lower() == "cifar100":
+            optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+            scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_schedule, gamma=lr_factor)
+        else:
+            optimizer = optim.Adam(model.parameters(), lr=lr)
+            scheduler = None
+        
         # Train model on poisoned data
         logger.info("Training model on poisoned data...")
         model.train()
-        for epoch in range(200):  # Train for 200 epochs
+        for epoch in range(epochs):
+            running_loss = 0.0
             for batch_idx, (data, targets) in enumerate(poisoned_loader):
                 data, targets = data.to(device), targets.to(device)
                 optimizer.zero_grad()
@@ -145,9 +209,13 @@ def run_poison_experiment(
                 loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
+                running_loss += loss.item()
                 
-            # Print progress every 10 epochs
-            if (epoch + 1) % 10 == 0:
+            if scheduler is not None:
+                scheduler.step()
+                
+            # Print progress every epoch for short training, every 10 epochs for long training
+            if epochs <= 10 or (epoch + 1) % 10 == 0:
                 model.eval()
                 correct = 0
                 total = 0
@@ -159,7 +227,7 @@ def run_poison_experiment(
                         total += targets.size(0)
                         correct += predicted.eq(targets).sum().item()
                 accuracy = 100. * correct / total
-                logger.info(f'Epoch [{epoch+1}/200] Test Accuracy: {accuracy:.2f}%')
+                logger.info(f'Poisoned Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(poisoned_loader):.3f} Test Accuracy: {accuracy:.2f}%')
                 model.train()
         
         # Final evaluation
@@ -174,6 +242,7 @@ def run_poison_experiment(
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
         final_accuracy = 100. * correct / total
+        logger.info(f'Final model accuracy: {final_accuracy:.2f}%')
         
         # Update results
         results = {

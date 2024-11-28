@@ -3,56 +3,46 @@ defaults:
   batch_size: 128
   num_workers: 4
   pin_memory: true
-  use_amp: false  # Not in verified config
-  use_swa: false  # Not in verified config
-  use_mixup: false  # Not in verified config
-  label_smoothing: 0.0  # Not in verified config
   
   # Optimizer settings
   optimizer: SGD
-  learning_rate: 0.1  # Verified initial learning rate
+  learning_rate: 0.1
   momentum: 0.9
-  weight_decay: 5e-4  # 0.0005 as specified
-  grad_clip: 1.0
+  weight_decay: 0.0005  # 5e-4
   
   # Learning rate schedule
-  lr_schedule: [60, 120, 160]  # Verified schedule
+  lr_schedule: [60, 120, 160]
   lr_factor: 0.2
   
   # Data augmentation
   random_crop: true
-  random_crop_padding: 4  # Verified padding value
+  random_crop_padding: 4
   random_horizontal_flip: true
   normalize: true
-  normalize_mean: [0.5071, 0.4867, 0.4408]  # Verified CIFAR-100 means
-  normalize_std: [0.2675, 0.2565, 0.2761]   # Verified CIFAR-100 stds
-  cutout: false  # Not in verified config
-  cutout_length: 8
+  normalize_mean: [0.5071, 0.4867, 0.4408]  # CIFAR-100 means
+  normalize_std: [0.2675, 0.2565, 0.2761]   # CIFAR-100 stds
 
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:
     epochs: 200
     batch_size: 128
-    learning_rate: 0.1
-    weight_decay: 5e-4
-    grad_clip: 1.0
-    use_amp: true
-    use_swa: false
-    use_mixup: false
-    mixup_alpha: 0.2
-    label_smoothing: 0.0
     model: wrn-28-10
     depth: 28
     widen_factor: 10
-    dropout_rate: 0.3  # Verified dropout rate
+    dropout_rate: 0.3
     num_classes: 100
+    learning_rate: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005  # 5e-4
     
   gtsrb:
+    subset_size: 10
     epochs: 10
     learning_rate: 0.001
     
   imagenette:
+    subset_size: 10
     epochs: 10
     learning_rate: 0.001
 
@@ -94,19 +84,7 @@ experiment_groups:
     experiments:
       - name: gtsrb_quick_test
         dataset: gtsrb
-        subset_size: 5  # Very small subset
-        epochs: 1       # Just one epoch
-        batch_size: 8   # Small batch size
-        attack: pgd     # Single attack type
-
-# Output configuration
-output:
-  base_dir: "results"
-  consolidated_file: "all_results.csv"
-  save_individual_results: true  # Whether to keep individual experiment CSV files
-
-# Execution configuration
-execution:
-  parallel: true  # Whether to run experiments in parallel
-  max_workers: 2  # Maximum number of parallel experiments
-  gpu_ids: [0]   # List of GPU IDs to use
+        subset_size: 5
+        epochs: 1
+        batch_size: 8
+        attack: pgd
