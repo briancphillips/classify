@@ -138,9 +138,9 @@ def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
     config = PoisonConfig(
         poison_type=PoisonType.GRADIENT_ASCENT,
         poison_ratio=poison_ratio,
-        ga_epsilon=0.3,
-        ga_learning_rate=0.1,
-        ga_steps=40
+        ga_steps=40,
+        ga_iterations=100,
+        ga_lr=0.1
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     attack = GradientAscentAttack(config, device)
@@ -149,11 +149,11 @@ def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
 def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"):
     """Run label flip poisoning attack."""
     if mode == "random":
-        poison_type = PoisonType.LABEL_FLIP_RANDOM_RANDOM
+        poison_type = PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
     elif mode == "target":
-        poison_type = PoisonType.LABEL_FLIP_RANDOM_TARGET
+        poison_type = PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
     else:  # source_target
-        poison_type = PoisonType.LABEL_FLIP_SOURCE_TARGET
+        poison_type = PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
         
     config = PoisonConfig(
         poison_type=poison_type,
