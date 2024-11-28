@@ -27,6 +27,7 @@ def parse_args() -> Dict[str, Any]:
     parser.add_argument("--attack", type=str, required=True, help="Attack type to use")
     parser.add_argument("--output-dir", type=str, default="results", help="Output directory")
     parser.add_argument("--config", type=str, default="experiments/config.yaml", help="Path to config file")
+    parser.add_argument("--poison-ratio", type=float, default=0.1, help="Ratio of dataset to poison")
 
     return parser.parse_args()
 
@@ -51,8 +52,8 @@ def main():
         # Create poison config
         try:
             poison_config = PoisonConfig(
-                attack_type=PoisonType(args.attack),
-                output_dir=args.output_dir
+                poison_type=PoisonType(args.attack),
+                poison_ratio=args.poison_ratio
             )
             logger.info(f"Created poison config: {poison_config}")
         except Exception as e:

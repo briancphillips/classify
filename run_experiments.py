@@ -57,7 +57,8 @@ class ExperimentManager:
             "python", "poison.py",
             "--dataset", experiment["dataset"],
             "--attack", attack,
-            "--output-dir", str(self.results_dir)
+            "--output-dir", str(self.results_dir),
+            "--poison-ratio", str(experiment.get("poison_ratio", 0.1))
         ]
         
         logger.info(f"Built command: {' '.join(cmd)}")
