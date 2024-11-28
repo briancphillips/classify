@@ -13,6 +13,7 @@ from tqdm import tqdm
 import time
 
 from models.data import get_dataset
+from models.architectures import get_model
 from experiment.visualization import plot_classifier_comparison
 from utils.logging import get_logger
 
