@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
+from sklearn.decomposition import PCA
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -20,18 +21,18 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def extract_features_and_labels(dataset, model, device, batch_size=128):
+def extract_features_and_labels(dataset, model, device, batch_size=256):
     """Extract CNN features and labels from a PyTorch dataset."""
-    model.eval()  # Set model to evaluation mode
+    model.eval()
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False, num_workers=0
+        dataset, batch_size=batch_size, shuffle=False, num_workers=4,
+        pin_memory=True if device.type == 'cuda' else False
     )
     features = []
     labels = []
 
-    with torch.no_grad():  # Disable gradient computation
+    with torch.no_grad():
         for batch, targets in tqdm(dataloader, desc="Extracting CNN features"):
-            # Move batch to device
             if isinstance(batch, torch.Tensor):
                 batch = batch.to(device)
             # Extract features using CNN
@@ -75,35 +76,50 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=None):
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
+    
+    # Apply PCA for dimensionality reduction
+    n_components = min(X_train.shape[1], 512)  # Cap at 512 components
+    pca = PCA(n_components=n_components, random_state=42)
+    X_train = pca.fit_transform(X_train)
+    X_test = pca.transform(X_test)
+    
+    logger.info(f"Reduced feature dimension from {X_train.shape[1]} to {n_components} components")
+    logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_.sum():.4f}")
 
-    # Initialize classifiers with better hyperparameters
+    # Initialize classifiers with optimized hyperparameters
     classifiers = {
         "KNN": KNeighborsClassifier(
-            n_neighbors=min(20, len(y_train) // 100),  # Scale with dataset size
-            weights='distance',  # Weight by distance
-            n_jobs=-1  # Use all CPU cores
+            n_neighbors=min(30, len(y_train) // 50),  # Adjusted scaling
+            weights='distance',
+            metric='cosine',  # Changed to cosine similarity
+            n_jobs=-1
         ),
         "LR": LogisticRegression(
             max_iter=2000,
             multi_class='multinomial',
+            solver='lbfgs',
+            C=10.0,  # Increased regularization strength
             class_weight='balanced',
             n_jobs=-1
         ),
         "RF": RandomForestClassifier(
-            n_estimators=200,
+            n_estimators=500,  # Increased number of trees
             max_depth=None,
             min_samples_split=2,
             min_samples_leaf=1,
             max_features='sqrt',
+            bootstrap=True,
             n_jobs=-1,
-            class_weight='balanced'
+            class_weight='balanced',
+            random_state=42
         ),
         "SVM": SVC(
             kernel="rbf",
-            C=10.0,  # Increased from default 1.0
-            gamma='scale',  # Use scaled gamma
+            C=100.0,  # Further increased from 10.0
+            gamma='scale',
             class_weight='balanced',
-            cache_size=2000  # Increase cache size for faster training
+            cache_size=2000,
+            random_state=42
         ),
     }
 
