@@ -8,7 +8,6 @@ import sys
 import torch
 import os
 import json
-from typing import Dict, Any
 import yaml
 from config.types import PoisonType
 from config.dataclasses import PoisonConfig
@@ -16,9 +15,48 @@ from experiment import PoisonExperiment
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
 import torch.optim as optim
+from models.data import get_dataset
+from models.architectures import get_model
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from attacks.pgd import PGDPoisonAttack
+from attacks.gradient_ascent import GradientAscentPoisonAttack
+from attacks.label_flip import LabelFlipPoisonAttack
 
 logger = get_logger(__name__)
 error_logger = get_error_logger()
+
+def get_loaders(dataset: str):
+    """Get train and test data loaders for a dataset.
+    
+    Args:
+        dataset: Name of dataset ('cifar100', 'gtsrb', 'imagenette')
+        
+    Returns:
+        Tuple[DataLoader, DataLoader]: Train and test data loaders
+    """
+    # Get datasets with default transforms
+    train_dataset = get_dataset(dataset, train=True)
+    test_dataset = get_dataset(dataset, train=False)
+    
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=128,  # Default batch size from config
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+    
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=128,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+    )
+    
+    return train_loader, test_loader
 
 def run_poison_experiment(
     dataset: str,
@@ -81,25 +119,47 @@ def run_poison_experiment(
         logger.error(f"Error in poison experiment: {str(e)}")
         raise
 
-def get_loaders(dataset: str):
-    # This function should be implemented to load the dataset
-    pass
-
-def get_model(dataset: str):
-    # This function should be implemented to load the model
-    pass
-
 def run_pgd_attack(model, train_loader, test_loader, poison_ratio):
-    # This function should be implemented to run the PGD attack
-    pass
+    """Run PGD poisoning attack."""
+    config = PoisonConfig(
+        poison_type=PoisonType.PGD,
+        poison_ratio=poison_ratio,
+        pgd_eps=0.3,
+        pgd_alpha=0.1,
+        pgd_steps=40
+    )
+    attack = PGDPoisonAttack(config)
+    return attack.poison_dataset(train_loader.dataset, model)
 
 def run_gradient_ascent(model, train_loader, test_loader, poison_ratio):
-    # This function should be implemented to run the gradient ascent attack
-    pass
+    """Run gradient ascent poisoning attack."""
+    config = PoisonConfig(
+        poison_type=PoisonType.GRADIENT_ASCENT,
+        poison_ratio=poison_ratio,
+        ga_epsilon=0.3,
+        ga_learning_rate=0.1,
+        ga_steps=40
+    )
+    attack = GradientAscentPoisonAttack(config)
+    return attack.poison_dataset(train_loader.dataset, model)
 
-def run_label_flip(model, train_loader, test_loader, poison_ratio, mode):
-    # This function should be implemented to run the label flip attack
-    pass
+def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"):
+    """Run label flip poisoning attack."""
+    if mode == "random":
+        poison_type = PoisonType.LABEL_FLIP_RANDOM_RANDOM
+    elif mode == "target":
+        poison_type = PoisonType.LABEL_FLIP_RANDOM_TARGET
+    else:  # source_target
+        poison_type = PoisonType.LABEL_FLIP_SOURCE_TARGET
+        
+    config = PoisonConfig(
+        poison_type=poison_type,
+        poison_ratio=poison_ratio,
+        source_class=0,  # Only used for source_target mode
+        target_class=1   # Only used for target modes
+    )
+    attack = LabelFlipPoisonAttack(config)
+    return attack.poison_dataset(train_loader.dataset, model)
 
 if __name__ == "__main__":
     logger.warning("This script is not meant to be run directly. Please use run_experiments.py instead.")
