@@ -4,7 +4,7 @@ defaults:
   num_workers: 4
   pin_memory: true
   use_amp: true
-  use_swa: false
+  use_swa: true  # Enable SWA for better final model
   use_mixup: true
   mixup_alpha: 0.2
   label_smoothing: 0.05
@@ -16,29 +16,29 @@ defaults:
   weight_decay: 1e-4
   grad_clip: 1.0
   
-  # Learning rate schedule
-  lr_schedule: [30, 60, 90]
+  # Learning rate schedule - adjusted for longer training
+  lr_schedule: [60, 120, 160]  # Extended schedule
   lr_factor: 0.2
   
   # SWA settings
-  swa_start: 160
-  swa_lr: 0.001
+  swa_start: 160  # Start SWA after last LR drop
+  swa_lr: 0.01  # Increased SWA learning rate
   
   # Early stopping
-  patience: 20
+  patience: 30  # Increased patience for longer training
   min_delta: 0.001
   
   # Data augmentation
   random_crop: true
   random_horizontal_flip: true
   normalize: true
-  cutout: false
+  cutout: true  # Re-enable cutout with current settings
   cutout_length: 8
 
 # Dataset-specific defaults
 dataset_defaults:
   cifar100:
-    epochs: 200
+    epochs: 200  # Extended total epochs
     model: wrn-28-10
     num_classes: 100
     batch_size: 128
@@ -46,6 +46,7 @@ dataset_defaults:
     weight_decay: 1e-4
     grad_clip: 1.0
     use_amp: true
+    use_swa: true
     use_mixup: true
     mixup_alpha: 0.2
     label_smoothing: 0.05
