@@ -311,6 +311,28 @@ def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"
     attack = LabelFlipAttack(config, device)
     return attack.poison_dataset(train_loader.dataset, model)
 
+def main():
+    """Main function."""
+    args = parse_args()
+    
+    try:
+        results = run_poison_experiment(
+            dataset=args.dataset,
+            attack=args.attack,
+            output_dir=args.output_dir,
+            poison_ratio=args.poison_ratio,
+            subset_size=args.subset_size,
+            target_class=args.target_class,
+            source_class=args.source_class,
+            seed=args.seed
+        )
+        
+        logger.info(f"Experiment completed successfully: {args.dataset} with {args.attack}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Experiment failed: {str(e)}", exc_info=True)
+        raise
+
 if __name__ == "__main__":
-    logger.warning("This script is not meant to be run directly. Please use run_experiments.py instead.")
-    sys.exit(1)
+    main()
