@@ -11,7 +11,7 @@ import os
 import json
 from typing import Dict, Any, List, Tuple
 import matplotlib.pyplot as plt
-from IPython.display import clear_output
+from IPython import display
 
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
@@ -273,10 +273,8 @@ def train_model(model, train_loader, test_loader, device):
     test_losses = []
     test_accs = []
     
-    # Set up the plot
-    plt.ion()  # Enable interactive mode
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    fig.suptitle('Training Progress')
+    # Set up the plot style
+    plt.style.use('seaborn')
     
     if latest_checkpoint:
         checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)
@@ -339,33 +337,34 @@ def train_model(model, train_loader, test_loader, device):
         test_losses.append(test_loss)
         test_accs.append(test_acc)
         
-        # Update plots
-        epochs = list(range(len(train_losses)))
-        
-        # Clear previous plots
-        ax1.clear()
-        ax2.clear()
+        # Create new figure for this update
+        plt.figure(figsize=(15, 5))
         
         # Plot losses
-        ax1.plot(epochs, train_losses, label='Train Loss')
-        ax1.plot(epochs, test_losses, label='Test Loss')
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Loss')
-        ax1.legend()
-        ax1.grid(True)
+        plt.subplot(1, 2, 1)
+        plt.plot(train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
+        plt.plot(test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training and Test Loss')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
         
         # Plot accuracies
-        ax2.plot(epochs, train_accs, label='Train Acc')
-        ax2.plot(epochs, test_accs, label='Test Acc')
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Accuracy (%)')
-        ax2.legend()
-        ax2.grid(True)
+        plt.subplot(1, 2, 2)
+        plt.plot(train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
+        plt.plot(test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy (%)')
+        plt.title('Training and Test Accuracy')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
         
-        # Adjust layout and display
+        # Update display
+        display.clear_output(wait=True)
         plt.tight_layout()
-        plt.draw()
-        plt.pause(0.1)
+        display.display(plt.gcf())
+        plt.close()
         
         # Step the scheduler
         scheduler.step()
