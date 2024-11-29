@@ -5,6 +5,7 @@ import numpy as np
 from typing import Tuple, List
 from torchvision import datasets, transforms
 import copy
+from tqdm import tqdm
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult
@@ -69,9 +70,12 @@ class LabelFlipAttack(PoisonAttack):
             raise ValueError(f"Unsupported label flip type: {self.config.poison_type}")
 
         # Apply label flips
+        logger.info(f"Applying label flips to {len(indices)} samples")
+        pbar = tqdm(indices, desc="Flipping labels", total=len(indices))
+        
         if isinstance(dataset, torch.utils.data.dataset.Subset):
             base_dataset = dataset.dataset
-            for idx in indices:
+            for idx in pbar:
                 base_idx = dataset.indices[idx]
                 if isinstance(base_dataset, datasets.CIFAR100):
                     if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
@@ -101,7 +105,7 @@ class LabelFlipAttack(PoisonAttack):
                     base_dataset.samples[base_idx] = (img_path, new_label)
                     base_dataset.imgs[base_idx] = (img_path, new_label)
         else:
-            for idx in indices:
+            for idx in pbar:
                 if hasattr(dataset, "targets"):
                     if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
                         current_label = dataset.targets[idx]

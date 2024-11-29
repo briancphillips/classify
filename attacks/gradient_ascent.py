@@ -58,9 +58,6 @@ class GradientAscentAttack(PoisonAttack):
         # Create a copy of the dataset to avoid modifying the original
         poisoned_dataset = copy.deepcopy(dataset)
         
-        # Create dataloader for poisoning
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-        
         # Calculate number of samples to poison
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
@@ -68,17 +65,21 @@ class GradientAscentAttack(PoisonAttack):
         
         # Randomly select indices to poison
         indices_to_poison = np.random.choice(num_samples, size=num_poison, replace=False)
+        indices_to_poison = sorted(indices_to_poison)  # Sort for sequential access
         
         # Track poisoning success
         poison_success = 0
         total_poisoned = 0
         poisoned_indices = []
 
+        # Create progress bar for poisoned samples only
+        pbar = tqdm(indices_to_poison, desc="Poisoning samples", total=num_poison)
+        
         # Perform gradient ascent attack on selected samples
-        for idx, (data, target) in enumerate(tqdm(dataloader, desc="Poisoning samples")):
-            if idx not in indices_to_poison:
-                continue
-
+        for idx in pbar:
+            # Get sample from dataset
+            data, target = dataset[idx]
+            
             # Move data to device and ensure proper dimensions
             if not isinstance(data, torch.Tensor):
                 data = transforms.ToTensor()(data)
