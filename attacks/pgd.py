@@ -55,11 +55,20 @@ class PGDPoisonAttack(PoisonAttack):
             if idx not in indices_to_poison:
                 continue
 
-            # Move data to device and normalize
-            data = data.to(self.device)  # Shape: [1, C, H, W]
+            # Move data to device and ensure proper dimensions
+            if not isinstance(data, torch.Tensor):
+                data = transforms.ToTensor()(data)
+            
+            # Ensure we have a 4D tensor [B, C, H, W]
+            if len(data.shape) == 3:  # [C, H, W]
+                data = data.unsqueeze(0)  # Add batch dimension -> [1, C, H, W]
+            elif len(data.shape) == 5:  # [1, 1, C, H, W]
+                data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
+            
+            data = data.to(self.device)
             target = target.to(self.device)
 
-            # Normalize to [0,1] range
+            # Normalize to [0,1] range if needed
             if data.dtype == torch.uint8:
                 data = data.float() / 255.0
 
@@ -69,7 +78,13 @@ class PGDPoisonAttack(PoisonAttack):
             # PGD attack loop
             for step in range(self.config.pgd_steps):
                 perturbed_data.requires_grad = True
-                output = self.model(perturbed_data)  # Model expects [B, C, H, W]
+                
+                # Ensure proper dimensions before model forward pass
+                if len(perturbed_data.shape) != 4:
+                    logger.error(f"Unexpected perturbed data shape before model: {perturbed_data.shape}")
+                    raise ValueError(f"Expected 4D tensor, got shape {perturbed_data.shape}")
+                
+                output = self.model(perturbed_data)
                 loss = F.cross_entropy(output, target)
                 loss.backward()
 
@@ -109,17 +124,62 @@ class PGDPoisonAttack(PoisonAttack):
         poison_success_rate = poison_success / total_poisoned if total_poisoned > 0 else 0.0
         logger.info(f"Poisoning success rate: {poison_success_rate:.2%}")
 
-        # Create and return PoisonResult
-        result = PoisonResult(
-            config=self.config,
-            dataset_name=self.dataset_name,
-            poisoned_indices=poisoned_indices,
-            poison_success_rate=poison_success_rate,
-            original_accuracy=0.0,  # Will be computed later
-            poisoned_accuracy=0.0,  # Will be computed later
-        )
+        # Create data loaders for evaluation with proper batch handling
+        eval_batch_size = min(128, len(dataset))
+        dataloader_kwargs = {
+            "batch_size": eval_batch_size,
+            "shuffle": False,
+            "num_workers": 0,
+            "pin_memory": True,
+            "persistent_workers": False,
+        }
+        
+        clean_loader = DataLoader(dataset, **dataloader_kwargs)
+        poisoned_loader = DataLoader(poisoned_dataset, **dataloader_kwargs)
+
+        # Evaluate model on clean and poisoned data
+        result = PoisonResult(self.config, dataset_name=self.dataset_name)
+        result.original_accuracy = self._evaluate_model(clean_loader)
+        result.poisoned_accuracy = self._evaluate_model(poisoned_loader)
+        result.poison_success_rate = float(100.0 * poison_success_rate)
+        result.poisoned_indices = indices_to_poison.tolist() if isinstance(indices_to_poison, np.ndarray) else list(indices_to_poison)
+
+        logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
+        logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
 
         return poisoned_dataset, result
+
+    def _evaluate_model(self, dataloader: DataLoader) -> float:
+        """Evaluate model accuracy"""
+        self.model.eval()
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for inputs, targets in dataloader:
+                # Handle tensor conversion and dimensions
+                if not isinstance(inputs, torch.Tensor):
+                    inputs = transforms.ToTensor()(inputs)
+                
+                # Ensure proper dimensions [B, C, H, W]
+                if len(inputs.shape) == 3:  # [C, H, W]
+                    inputs = inputs.unsqueeze(0)  # Add batch dimension
+                elif len(inputs.shape) == 5:  # [1, 1, C, H, W]
+                    inputs = inputs.squeeze(1)  # Remove extra dimension
+                
+                # Move to device and normalize if needed
+                inputs = inputs.to(self.device)
+                if inputs.dtype == torch.uint8:
+                    inputs = inputs.float() / 255.0
+                targets = targets.to(self.device)
+
+                # Get predictions
+                outputs = self.model(inputs)
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+
+        return 100.0 * correct / total
 
     def pgd_attack(
         self,
@@ -210,24 +270,6 @@ class PGDPoisonAttack(PoisonAttack):
 
         return final_image
 
-    def _evaluate_model(self, dataloader: DataLoader) -> float:
-        """Evaluate model accuracy"""
-        self.model.eval()
-        correct = 0
-        total = 0
-
-        with torch.no_grad():
-            for inputs, targets in dataloader:
-                inputs, targets = move_to_device(inputs, self.device), move_to_device(
-                    targets, self.device
-                )
-                outputs = self.model(inputs)
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
-
-        return 100.0 * correct / total
-
     def _evaluate_model_with_original_labels(
         self, dataloader: DataLoader, original_labels: List[int]
     ) -> float:
@@ -239,15 +281,29 @@ class PGDPoisonAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, _ in dataloader:
-                inputs = move_to_device(inputs, self.device)
-                outputs = self.model(inputs)
-                _, predicted = outputs.max(1)
+                # Handle tensor conversion and dimensions
+                if not isinstance(inputs, torch.Tensor):
+                    inputs = transforms.ToTensor()(inputs)
+                
+                # Ensure proper dimensions [B, C, H, W]
+                if len(inputs.shape) == 3:  # [C, H, W]
+                    inputs = inputs.unsqueeze(0)  # Add batch dimension
+                elif len(inputs.shape) == 5:  # [1, 1, C, H, W]
+                    inputs = inputs.squeeze(1)  # Remove extra dimension
+                
+                # Move to device and normalize if needed
+                inputs = inputs.to(self.device)
+                if inputs.dtype == torch.uint8:
+                    inputs = inputs.float() / 255.0
 
                 # Get batch size number of original labels
                 batch_size = inputs.size(0)
                 batch_labels = original_labels[idx : idx + batch_size]
                 batch_labels = torch.tensor(batch_labels, device=self.device)
 
+                # Get predictions
+                outputs = self.model(inputs)
+                _, predicted = outputs.max(1)
                 total += batch_size
                 correct += predicted.eq(batch_labels).sum().item()
                 idx += batch_size
