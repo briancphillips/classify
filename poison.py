@@ -304,8 +304,8 @@ def train_model(model, train_loader, test_loader, device):
         test_accs = checkpoint.get('test_accs', [])
         logger.info(f"Resuming from epoch {start_epoch}")
         
-        # Create epoch points for x-axis when plotting history
-        epochs = list(range(start_epoch))  # This will create [0, 1, ..., start_epoch-1]
+        # Create epoch points for x-axis based on actual recorded metrics
+        epochs = list(range(len(train_losses)))  # Use the number of recorded metrics
     else:
         epochs = []
     
@@ -364,7 +364,12 @@ def train_model(model, train_loader, test_loader, device):
             plt.figure(figsize=(15, 5))
             
             # Get current epoch number for x-axis
-            current_epochs = epochs + [epoch]  # Add current epoch
+            if len(train_losses) > len(epochs):
+                # If we have a new metric, add the current epoch
+                current_epochs = epochs + [epoch]
+            else:
+                # Otherwise just use existing epochs
+                current_epochs = epochs
             
             # Ensure dimensions match
             assert len(current_epochs) == len(train_losses), f"Epoch dimension mismatch: {len(current_epochs)} vs {len(train_losses)}"
