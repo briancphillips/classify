@@ -139,22 +139,21 @@ def run_poison_experiment(
                 
             if scheduler is not None:
                 scheduler.step()
-                
-            # Print progress every epoch for short training, every 10 epochs for long training
-            if epochs <= 10 or (epoch + 1) % 10 == 0:
-                model.eval()
-                correct = 0
-                total = 0
-                with torch.no_grad():
-                    for data, targets in test_loader:
-                        data, targets = data.to(device), targets.to(device)
-                        outputs = model(data)
-                        _, predicted = outputs.max(1)
-                        total += targets.size(0)
-                        correct += predicted.eq(targets).sum().item()
-                accuracy = 100. * correct / total
-                logger.info(f'Clean Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(train_loader):.3f} Test Accuracy: {accuracy:.2f}%')
-                model.train()
+            
+            # Always log training progress
+            model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data, targets in test_loader:
+                    data, targets = data.to(device), targets.to(device)
+                    outputs = model(data)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+            accuracy = 100. * correct / total
+            logger.info(f'Clean Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(train_loader):.3f} Test Accuracy: {accuracy:.2f}%')
+            model.train()
         
         # Evaluate original model accuracy
         model.eval()
@@ -220,22 +219,21 @@ def run_poison_experiment(
                 
             if scheduler is not None:
                 scheduler.step()
-                
-            # Print progress every epoch for short training, every 10 epochs for long training
-            if epochs <= 10 or (epoch + 1) % 10 == 0:
-                model.eval()
-                correct = 0
-                total = 0
-                with torch.no_grad():
-                    for data, targets in test_loader:
-                        data, targets = data.to(device), targets.to(device)
-                        outputs = model(data)
-                        _, predicted = outputs.max(1)
-                        total += targets.size(0)
-                        correct += predicted.eq(targets).sum().item()
-                accuracy = 100. * correct / total
-                logger.info(f'Poisoned Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(poisoned_loader):.3f} Test Accuracy: {accuracy:.2f}%')
-                model.train()
+            
+            # Always log training progress
+            model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data, targets in test_loader:
+                    data, targets = data.to(device), targets.to(device)
+                    outputs = model(data)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+            accuracy = 100. * correct / total
+            logger.info(f'Poisoned Training - Epoch [{epoch+1}/{epochs}] Loss: {running_loss/len(poisoned_loader):.3f} Test Accuracy: {accuracy:.2f}%')
+            model.train()
         
         # Final evaluation
         model.eval()
