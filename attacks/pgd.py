@@ -49,7 +49,7 @@ class PGDPoisonAttack(PoisonAttack):
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        pbar = tqdm(indices_to_poison, desc="Poisoning samples")
+        pbar = tqdm(indices_to_poison, desc="Poisoning samples", total=num_poison)
         
         # Perform PGD attack on selected samples
         for idx in pbar:
