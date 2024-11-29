@@ -135,10 +135,36 @@ Results are saved in two formats:
 2. **Consolidated CSV**:
    - All experiments combined: `all_results.csv`
    - Standardized format with columns:
-     - Date, Iteration, Dataset
-     - Classifier, Model Architecture
-     - Attack Method, Number of Poisoned Samples
-     - Performance Metrics (accuracy, success rate)
+     - **Metadata**: Date, Iteration
+     - **Dataset Info**: Dataset, Train_Size, Test_Size, Num_Classes
+     - **Model Info**: Classifier, Model_Architecture
+     - **Attack Details**: 
+       - Modification_Method
+       - Num_Poisoned
+       - Poisoned_Classes
+       - Flip_Type
+     - **Training Parameters**:
+       - Epochs, Batch_Size
+       - Learning_Rate, Weight_Decay
+       - Optimizer
+     - **Performance Metrics**:
+       - Original_Accuracy
+       - Poisoned_Accuracy
+       - Poison_Success_Rate
+       - Clean_Test_Accuracy
+       - Precision, Recall, F1-Score
+     - **Time & Resource Usage**:
+       - Training_Time
+       - Inference_Time
+       - Total_Time
+       - Latency (avg batch time)
+     - **Loss Values**:
+       - Final_Train_Loss
+       - Final_Test_Loss
+       - Best_Train_Loss
+       - Best_Test_Loss
+     - **Per-Class Performance**:
+       - Class_0_Accuracy through Class_99_Accuracy
    - Ideal for analysis and plotting
 
 ## Project Structure
