@@ -298,9 +298,14 @@ def train_model(model, train_loader, test_loader, device):
         test_losses = checkpoint.get('test_losses', [])
         test_accs = checkpoint.get('test_accs', [])
         epochs_recorded = checkpoint.get('epochs_recorded', list(range(len(train_losses))))
-        logger.info(f"Loaded checkpoint - Metrics lengths: train_losses={len(train_losses)}, epochs_recorded={len(epochs_recorded)}")
-        logger.info(f"Epochs recorded so far: {epochs_recorded}")
-        logger.info(f"Resuming from epoch {start_epoch}")
+        
+        # Verify checkpoint consistency
+        assert len(train_losses) == len(test_losses) == len(train_accs) == len(test_accs) == len(epochs_recorded), \
+            f"Checkpoint metric lengths don't match: {len(train_losses)}, {len(test_losses)}, {len(train_accs)}, {len(test_accs)}, {len(epochs_recorded)}"
+        assert all(e < start_epoch for e in epochs_recorded), \
+            f"Recorded epochs {epochs_recorded} should all be less than start_epoch {start_epoch}"
+        
+        logger.info(f"Loaded checkpoint - Metrics: {len(train_losses)}, Start epoch: {start_epoch}, Epochs recorded: {epochs_recorded}")
     else:
         epochs_recorded = []
         train_losses = []
@@ -352,8 +357,9 @@ def train_model(model, train_loader, test_loader, device):
         test_loss = test_loss/len(test_loader)
         test_acc = 100. * correct / total
         
-        # Log state before updating metrics
-        logger.info(f"Before update - Metrics lengths: train_losses={len(train_losses)}, epochs_recorded={len(epochs_recorded)}")
+        # Verify metric consistency before update
+        assert len(train_losses) == len(test_losses) == len(train_accs) == len(test_accs) == len(epochs_recorded), \
+            f"Pre-update metric lengths don't match: {len(train_losses)}, {len(test_losses)}, {len(train_accs)}, {len(test_accs)}, {len(epochs_recorded)}"
         
         # Update metrics history and record this epoch
         train_losses.append(train_loss)
@@ -362,21 +368,14 @@ def train_model(model, train_loader, test_loader, device):
         test_accs.append(test_acc)
         epochs_recorded.append(epoch)
         
-        # Log state after updating metrics
-        logger.info(f"After update - Metrics lengths: train_losses={len(train_losses)}, epochs_recorded={len(epochs_recorded)}")
-        logger.info(f"Current epochs recorded: {epochs_recorded}")
+        # Verify metric consistency after update
+        assert len(train_losses) == len(test_losses) == len(train_accs) == len(test_accs) == len(epochs_recorded), \
+            f"Post-update metric lengths don't match: {len(train_losses)}, {len(test_losses)}, {len(train_accs)}, {len(test_accs)}, {len(epochs_recorded)}"
         
         # Only plot if in Jupyter
         if is_jupyter():
             # Create new figure for this update
             plt.figure(figsize=(15, 5))
-            
-            # Verify dimensions before plotting
-            if len(epochs_recorded) != len(train_losses):
-                logger.error(f"Dimension mismatch before plotting: epochs={len(epochs_recorded)}, metrics={len(train_losses)}")
-                logger.error(f"Epochs recorded: {epochs_recorded}")
-                logger.error(f"Number of metrics: {len(train_losses)}")
-                raise AssertionError(f"Dimension mismatch: epochs={len(epochs_recorded)}, metrics={len(train_losses)}")
             
             # Plot losses
             plt.subplot(1, 2, 1)
