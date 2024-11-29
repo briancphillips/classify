@@ -364,7 +364,6 @@ def train_model(model, train_loader, test_loader, device):
         display.clear_output(wait=True)
         plt.tight_layout()
         display.display(plt.gcf())
-        plt.close()
         
         # Step the scheduler
         scheduler.step()
@@ -386,10 +385,9 @@ def train_model(model, train_loader, test_loader, device):
                 'test_losses': test_losses,
                 'test_accs': test_accs
             }, checkpoint_dir, checkpoint_name)
-    
-    # Close the plot when training is done
-    plt.ioff()
-    plt.show()
+
+    # Final plot cleanup
+    plt.close('all')
 
 def get_latest_checkpoint(checkpoint_dir):
     """Get the path to the latest checkpoint."""
