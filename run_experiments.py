@@ -211,35 +211,36 @@ class ExperimentManager:
     def _consolidate_results(self):
         """Consolidate all experiment results into a single CSV file."""
         try:
-            # Find all result files
-            result_files = [f for f in self.results_dir.glob("*.csv") if f.is_file()]
+            from utils.export import load_experiment_results, create_results_dataframe
+            
+            # Find all JSON result files
+            result_files = list(self.results_dir.glob("*.json"))
             
             logger.info(f"Found {len(result_files)} result files to consolidate")
             for file in result_files:
                 logger.info(f"Processing file: {file}")
             
-            # Read and combine all CSV files with progress bar
-            dfs = []
+            # Load all results from JSON files
+            results = []
             with tqdm(result_files, desc="Reading result files", unit="file", mininterval=0.1) as pbar:
                 for file in pbar:
                     if Path(file).exists():
                         logger.info(f"Reading file: {file}")
-                        df = pd.read_csv(file)
-                        dfs.append(df)
+                        results.extend(load_experiment_results(file))
                     else:
                         logger.warning(f"File not found: {file}")
             
-            if not dfs:
-                logger.warning("No valid CSV files found to consolidate")
+            if not results:
+                logger.warning("No valid result files found to consolidate")
                 return
             
-            # Combine all results
-            combined_df = pd.concat(dfs, ignore_index=True)
+            # Convert results to DataFrame with proper format
+            df = create_results_dataframe(results)
             
             # Save consolidated results
             output_file = self.results_dir / self.config['output']['consolidated_file']
             logger.info(f"Saving consolidated results to: {output_file}")
-            combined_df.to_csv(output_file, index=False)
+            df.to_csv(output_file, index=False)
             logger.info("Results consolidated successfully")
             
             # Optionally remove individual result files
