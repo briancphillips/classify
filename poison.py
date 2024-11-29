@@ -363,16 +363,8 @@ def train_model(model, train_loader, test_loader, device):
             # Create new figure for this update
             plt.figure(figsize=(15, 5))
             
-            # Get current epoch number for x-axis
-            if len(train_losses) > len(epochs):
-                # If we have a new metric, add the current epoch
-                current_epochs = epochs + [epoch]
-            else:
-                # Otherwise just use existing epochs
-                current_epochs = epochs
-            
-            # Ensure dimensions match
-            assert len(current_epochs) == len(train_losses), f"Epoch dimension mismatch: {len(current_epochs)} vs {len(train_losses)}"
+            # Get current epoch number for x-axis - now includes the new metrics
+            current_epochs = list(range(len(train_losses)))
             
             # Plot losses
             plt.subplot(1, 2, 1)
