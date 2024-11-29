@@ -34,9 +34,6 @@ class PGDPoisonAttack(PoisonAttack):
         # Create a copy of the dataset to avoid modifying the original
         poisoned_dataset = copy.deepcopy(dataset)
         
-        # Create dataloader for poisoning
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-        
         # Calculate number of samples to poison
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
@@ -44,16 +41,20 @@ class PGDPoisonAttack(PoisonAttack):
         
         # Randomly select indices to poison
         indices_to_poison = np.random.choice(num_samples, size=num_poison, replace=False)
+        indices_to_poison = sorted(indices_to_poison)  # Sort for sequential access
         
         # Track poisoning success
         poison_success = 0
         total_poisoned = 0
         poisoned_indices = []
 
+        # Create progress bar for poisoned samples only
+        pbar = tqdm(indices_to_poison, desc="Poisoning samples")
+        
         # Perform PGD attack on selected samples
-        for idx, (data, target) in enumerate(tqdm(dataloader, desc="Poisoning samples")):
-            if idx not in indices_to_poison:
-                continue
+        for idx in pbar:
+            # Get sample from dataset
+            data, target = dataset[idx]
 
             # Move data to device and ensure proper dimensions
             if not isinstance(data, torch.Tensor):
@@ -66,7 +67,7 @@ class PGDPoisonAttack(PoisonAttack):
                 data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
             
             data = data.to(self.device)
-            target = target.to(self.device)
+            target = torch.tensor([target]).to(self.device)
 
             # Normalize to [0,1] range if needed
             if data.dtype == torch.uint8:
@@ -81,7 +82,7 @@ class PGDPoisonAttack(PoisonAttack):
                 
                 # Ensure proper dimensions before model forward pass
                 if len(perturbed_data.shape) != 4:
-                    logger.error(f"Unexpected perturbed data shape before model: {perturbed_data.shape}")
+                    logger.error(f"Unexpected perturbed data shape: {perturbed_data.shape}")
                     raise ValueError(f"Expected 4D tensor, got shape {perturbed_data.shape}")
                 
                 output = self.model(perturbed_data)
@@ -116,6 +117,9 @@ class PGDPoisonAttack(PoisonAttack):
 
             poisoned_indices.append(idx)
             total_poisoned += 1
+
+            # Update progress bar description
+            pbar.set_description(f"Poisoning samples (success rate: {100.0 * poison_success / total_poisoned:.1f}%)")
 
             # Clear GPU memory
             clear_memory()
