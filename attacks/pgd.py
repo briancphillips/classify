@@ -72,11 +72,16 @@ class PGDPoisonAttack(PoisonAttack):
             if idx not in indices_to_poison:
                 continue
 
+            # Get data and target
             data = data.to(self.device)
             target = target.to(self.device)
 
-            # Normalize to [0,1] range
+            # Normalize to [0,1] range and ensure correct shape
             data = data / 255.0
+            if len(data.shape) == 3:  # Single image in CHW format
+                data = data.unsqueeze(0)  # Add batch dimension
+            elif len(data.shape) == 4 and data.shape[0] > 1:  # Multiple images in batch
+                data = data[0].unsqueeze(0)  # Take first image and add batch dimension
 
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
@@ -85,7 +90,7 @@ class PGDPoisonAttack(PoisonAttack):
             for step in range(self.config.pgd_steps):
                 perturbed_data.requires_grad = True
                 output = self.model(perturbed_data)
-                loss = F.cross_entropy(output, target)
+                loss = F.cross_entropy(output, target.unsqueeze(0))  # Add batch dimension to target
                 loss.backward()
 
                 # Update perturbed data
@@ -104,9 +109,9 @@ class PGDPoisonAttack(PoisonAttack):
                     poison_success += 1
 
             # Convert back to uint8 and correct format
+            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension
             perturbed_data = (perturbed_data * 255).byte()
-            if len(perturbed_data.shape) == 3:  # If image is in CHW format
-                perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert back to HWC
+            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert from CHW to HWC format
 
             # Update the dataset with poisoned sample
             if isinstance(dataset, torch.utils.data.dataset.Subset):
