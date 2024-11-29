@@ -254,7 +254,24 @@ def train_model(model, train_loader, test_loader, device):
         gamma=0.2  # Decay factor
     )
     
-    for epoch in range(200):  # 200 epochs as specified
+    # Setup checkpoint directory - using model name instead of hardcoding dataset
+    model_name = model.__class__.__name__.lower()
+    checkpoint_dir = os.path.join('checkpoints', model_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_name = model_name
+    
+    # Try to load checkpoint if exists
+    start_epoch = 0
+    best_acc = 0
+    latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint:
+        checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)
+        start_epoch = checkpoint['epoch'] + 1
+        best_acc = checkpoint.get('best_acc', 0)
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        logger.info(f"Resuming from epoch {start_epoch}")
+    
+    for epoch in range(start_epoch, 200):  # 200 epochs as specified
         # Training metrics
         model.train()
         running_loss = 0.0
@@ -302,3 +319,40 @@ def train_model(model, train_loader, test_loader, device):
         
         # Log with current learning rate
         logger.info(f'Epoch [{epoch+1}/200] LR: {scheduler.get_last_lr()[0]:.6f} Train Loss: {train_loss:.3f} Train Acc: {train_acc:.2f}% Test Loss: {test_loss:.3f} Test Acc: {test_acc:.2f}%')
+        
+        # Save checkpoint
+        if test_acc > best_acc:
+            best_acc = test_acc
+            save_checkpoint({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'best_acc': best_acc
+            }, checkpoint_dir, checkpoint_name)
+
+def get_latest_checkpoint(checkpoint_dir):
+    """Get the path to the latest checkpoint."""
+    checkpoints = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt')]
+    if not checkpoints:
+        return None
+    latest_checkpoint = max([os.path.join(checkpoint_dir, f) for f in checkpoints], key=os.path.getmtime)
+    return latest_checkpoint
+
+def load_checkpoint(checkpoint_path, model, optimizer, device):
+    """Load a checkpoint."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    return checkpoint
+
+def save_checkpoint(checkpoint, checkpoint_dir, checkpoint_name):
+    """Save a checkpoint."""
+    # Save latest checkpoint
+    latest_path = os.path.join(checkpoint_dir, f"{checkpoint_name}_latest.pt")
+    torch.save(checkpoint, latest_path)
+    
+    # If this is the best model, save it as best
+    if checkpoint.get('is_best', False):
+        best_path = os.path.join(checkpoint_dir, f"{checkpoint_name}_best.pt")
+        torch.save(checkpoint, best_path)
