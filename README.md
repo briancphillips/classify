@@ -15,6 +15,8 @@ A modular framework for experimenting with data poisoning attacks on image class
 - Comprehensive evaluation and visualization
 - Checkpoint support for interrupted training
 - Support for CUDA, MPS (Apple Silicon), and CPU
+- Experiment management with YAML configuration
+- Automated results consolidation and analysis
 
 ## Installation
 
@@ -22,7 +24,7 @@ A modular framework for experimenting with data poisoning attacks on image class
 
 ```bash
 git clone <repository_url>
-cd classify2
+cd classify4
 ```
 
 2. Install dependencies:
@@ -33,68 +35,80 @@ pip install -r requirements.txt
 
 ## Usage
 
-Basic usage:
+The framework uses YAML configuration files to define experiments. The main entry point is `run_experiments.py`:
 
 ```bash
-python poison.py --dataset <dataset> --attack <attack_type> [options]
+python run_experiments.py --config experiments/config.yaml
 ```
 
-### Example Commands
+### Configuration
 
-1. Basic PGD attack on GTSRB:
+Experiments are defined in YAML files. Example configuration:
 
-```bash
-python poison.py --dataset gtsrb --attack pgd --poison-ratio 0.1 --epochs 10
+```yaml
+# Output configuration
+output:
+  base_dir: "results"
+  save_model: true
+  consolidated_file: "all_results.csv"
+
+# Experiment groups
+experiment_groups:
+  basic_comparison:
+    description: "Basic comparison of all attacks"
+    experiments:
+      - name: cifar100_all_attacks
+        dataset: cifar100
+        attacks: [pgd, ga, label_flip]
+        poison_ratio: 0.1
 ```
 
-2. Gradient ascent attack with smaller subset:
+### Example Configurations
 
-```bash
-python poison.py --dataset cifar100 --attack ga --subset-size 100 --epochs 5
+1. Basic PGD attack on CIFAR-100:
+```yaml
+experiments:
+  - name: cifar100_pgd
+    dataset: cifar100
+    attacks: [pgd]
+    poison_ratio: 0.1
 ```
 
-3. Label flipping attack with target class:
-
-```bash
-python poison.py --dataset gtsrb --attack label_flip --target-class 0 --poison-ratio 0.1
+2. Gradient ascent with smaller subset:
+```yaml
+experiments:
+  - name: cifar100_ga_small
+    dataset: cifar100
+    attacks: [ga]
+    subset_size: 100
 ```
 
-4. Targeted label flipping from one class to another:
-
-```bash
-python poison.py --dataset gtsrb --attack label_flip --source-class 1 --target-class 0
+3. Label flipping with target class:
+```yaml
+experiments:
+  - name: cifar100_label_flip
+    dataset: cifar100
+    attacks: [label_flip]
+    target_class: 0
+    poison_ratio: 0.1
 ```
 
-### Command Line Arguments
+### Configuration Parameters
 
 #### Dataset Parameters
-
-- `--dataset`: Dataset to use (`cifar100`, `gtsrb`, `imagenette`)
-- `--subset-size`: Number of samples per class (optional)
+- `dataset`: Dataset to use (`cifar100`, `gtsrb`, `imagenette`)
+- `subset_size`: Number of samples per class (optional)
 
 #### Attack Parameters
-
-- `--attack`: Attack type (`pgd`, `ga`, `label_flip`)
-- `--poison-ratio`: Ratio of dataset to poison (default: 0.1)
-- `--target-class`: Target class for label flipping attacks
-- `--source-class`: Source class for targeted label flipping
-
-#### Training Parameters
-
-- `--epochs`: Number of training epochs (default: 30)
-- `--learning-rate`: Learning rate (default: 0.001)
-- `--batch-size`: Batch size (default: 128)
-- `--num-workers`: Number of data loading workers (default: 2)
-
-#### Device Parameters
-
-- `--device`: Device to use (`cuda`, `mps`, `cpu`)
+- `attacks`: List of attacks to run (`pgd`, `ga`, `label_flip`)
+- `poison_ratio`: Ratio of dataset to poison (default: 0.1)
+- `target_class`: Target class for label flipping attacks
+- `source_class`: Source class for targeted label flipping
 
 #### Output Parameters
-
-- `--output-dir`: Directory to save results (default: results)
-- `--checkpoint-dir`: Directory to save checkpoints (default: checkpoints)
-- `--debug`: Enable debug logging
+- `base_dir`: Directory to save results (default: results)
+- `save_model`: Whether to save trained models (default: true)
+- `consolidated_file`: Name of consolidated results file (default: all_results.csv)
 
 ## Running Experiments
 
@@ -151,7 +165,7 @@ Results are saved in two formats:
 ├── utils/              # Utility functions
 │   ├── device.py       # Device management
 │   └── logging.py      # Logging setup
-├── poison.py           # Main script
+├── run_experiments.py  # Main script
 └── requirements.txt    # Python dependencies
 ```
 
