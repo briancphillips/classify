@@ -10,6 +10,8 @@ from torch.utils.data import DataLoader, Dataset
 import os
 import json
 from typing import Dict, Any, List, Tuple
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
 
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
@@ -264,11 +266,28 @@ def train_model(model, train_loader, test_loader, device):
     start_epoch = 0
     best_acc = 0
     latest_checkpoint = get_latest_checkpoint(checkpoint_dir)
+    
+    # Initialize metrics tracking
+    train_losses = []
+    train_accs = []
+    test_losses = []
+    test_accs = []
+    
+    # Set up the plot
+    plt.ion()  # Enable interactive mode
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    fig.suptitle('Training Progress')
+    
     if latest_checkpoint:
         checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)
         start_epoch = checkpoint['epoch'] + 1
         best_acc = checkpoint.get('best_acc', 0)
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        # Load previous metrics if available
+        train_losses = checkpoint.get('train_losses', [])
+        train_accs = checkpoint.get('train_accs', [])
+        test_losses = checkpoint.get('test_losses', [])
+        test_accs = checkpoint.get('test_accs', [])
         logger.info(f"Resuming from epoch {start_epoch}")
     
     for epoch in range(start_epoch, 200):  # 200 epochs as specified
@@ -314,6 +333,40 @@ def train_model(model, train_loader, test_loader, device):
         test_loss = test_loss/len(test_loader)
         test_acc = 100. * correct / total
         
+        # Update metrics history
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        test_losses.append(test_loss)
+        test_accs.append(test_acc)
+        
+        # Update plots
+        epochs = list(range(len(train_losses)))
+        
+        # Clear previous plots
+        ax1.clear()
+        ax2.clear()
+        
+        # Plot losses
+        ax1.plot(epochs, train_losses, label='Train Loss')
+        ax1.plot(epochs, test_losses, label='Test Loss')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # Plot accuracies
+        ax2.plot(epochs, train_accs, label='Train Acc')
+        ax2.plot(epochs, test_accs, label='Test Acc')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Accuracy (%)')
+        ax2.legend()
+        ax2.grid(True)
+        
+        # Adjust layout and display
+        plt.tight_layout()
+        plt.draw()
+        plt.pause(0.1)
+        
         # Step the scheduler
         scheduler.step()
         
@@ -328,8 +381,16 @@ def train_model(model, train_loader, test_loader, device):
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
-                'best_acc': best_acc
+                'best_acc': best_acc,
+                'train_losses': train_losses,
+                'train_accs': train_accs,
+                'test_losses': test_losses,
+                'test_accs': test_accs
             }, checkpoint_dir, checkpoint_name)
+    
+    # Close the plot when training is done
+    plt.ioff()
+    plt.show()
 
 def get_latest_checkpoint(checkpoint_dir):
     """Get the path to the latest checkpoint."""
