@@ -96,6 +96,37 @@ python poison.py --dataset gtsrb --attack label_flip --source-class 1 --target-c
 - `--checkpoint-dir`: Directory to save checkpoints (default: checkpoints)
 - `--debug`: Enable debug logging
 
+## Running Experiments
+
+To run a full set of experiments:
+
+```bash
+python run_experiments.py --config experiments/config.yaml
+```
+
+The experiment runner will:
+1. Execute all experiments defined in the config file
+2. Save individual results as JSON files
+3. Consolidate all results into a single CSV file (`all_results.csv`)
+
+### Experiment Results
+
+Results are saved in two formats:
+
+1. **Individual JSON Files**: 
+   - One per experiment: `{dataset}_{attack}_results.json`
+   - Contains detailed metrics and configuration
+   - Useful for debugging and detailed analysis
+
+2. **Consolidated CSV**:
+   - All experiments combined: `all_results.csv`
+   - Standardized format with columns:
+     - Date, Iteration, Dataset
+     - Classifier, Model Architecture
+     - Attack Method, Number of Poisoned Samples
+     - Performance Metrics (accuracy, success rate)
+   - Ideal for analysis and plotting
+
 ## Project Structure
 
 ```
