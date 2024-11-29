@@ -1,26 +1,10 @@
-# Default configuration that applies to all experiments unless overridden
-defaults:
-  batch_size: 128
-  num_workers: 4
-  pin_memory: true
-  
-  # Optimizer settings
-  optimizer: SGD
-  learning_rate: 0.1
-  momentum: 0.9
-  weight_decay: 0.0005  # 5e-4
-  
-  # Learning rate schedule
-  lr_schedule: [60, 120, 160]
-  lr_factor: 0.2
-  
-  # Data augmentation
-  random_crop: true
-  random_crop_padding: 4
-  random_horizontal_flip: true
-  normalize: true
-  normalize_mean: [0.5071, 0.4867, 0.4408]  # CIFAR-100 means
-  normalize_std: [0.2675, 0.2565, 0.2761]   # CIFAR-100 stds
+# This file only contains experiment-specific overrides.
+# Default values are defined in config/defaults.py
+
+# Execution configuration
+execution:
+  max_workers: 1  # Number of parallel experiments to run
+  gpu_ids: [0]   # List of GPU IDs to use
 
 # Output configuration
 output:
@@ -29,34 +13,12 @@ output:
   save_frequency: 10
   consolidated_file: "all_results.csv"
 
-# Execution configuration
-execution:
-  max_workers: 1  # Number of parallel experiments to run
-  gpu_ids: [0]   # List of GPU IDs to use
-
-# Dataset-specific defaults
-dataset_defaults:
+# Dataset-specific overrides
+dataset_overrides:
   cifar100:
-    epochs: 200
-    batch_size: 128
-    model: wrn-28-10
-    depth: 28
-    widen_factor: 10
-    dropout_rate: 0.3
-    num_classes: 100
-    learning_rate: 0.1
-    momentum: 0.9
-    weight_decay: 0.0005  # 5e-4
-    
+    epochs: 5  # Override for faster experimentation
   gtsrb:
-    subset_size: 10
-    epochs: 10
-    learning_rate: 0.001
-    
-  imagenette:
-    subset_size: 10
-    epochs: 10
-    learning_rate: 0.001
+    epochs: 5  # Override for faster experimentation
 
 # Experiment groups
 experiment_groups:

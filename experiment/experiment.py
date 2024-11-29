@@ -363,31 +363,132 @@ class PoisonExperiment:
         logger.info(f"Test samples: {len(self.test_dataset)}")
         logger.info(f"Running {len(self.configs)} poisoning configurations")
 
+    def _save_checkpoint(self, epoch: int, model: nn.Module, optimizer, scheduler, 
+                        train_loss: float, train_acc: float, val_loss: float, val_acc: float,
+                        is_best: bool = False, is_final: bool = False) -> str:
+        """Save a model checkpoint.
+        
+        Args:
+            epoch: Current epoch number
+            model: Model to save
+            optimizer: Optimizer to save
+            scheduler: Learning rate scheduler to save
+            train_loss: Training loss
+            train_acc: Training accuracy
+            val_loss: Validation loss
+            val_acc: Validation accuracy
+            is_best: Whether this is the best model so far
+            is_final: Whether this is the final checkpoint
+            
+        Returns:
+            Path to the saved checkpoint
+        """
+        if is_final:
+            checkpoint_path = os.path.join(self.checkpoint_dir, "model_final.pt")
+        elif is_best:
+            checkpoint_path = os.path.join(self.checkpoint_dir, "model_best.pt")
+        else:
+            checkpoint_path = os.path.join(self.checkpoint_dir, f"model_epoch_{epoch}.pt")
+            
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'train_loss': train_loss,
+            'train_acc': train_acc,
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'config': self.config,
+        }, checkpoint_path)
+        
+        logger.info(f"Saved checkpoint to {checkpoint_path}")
+        return checkpoint_path
+        
+    def _load_checkpoint(self, checkpoint_path: str) -> dict:
+        """Load a model checkpoint.
+        
+        Args:
+            checkpoint_path: Path to checkpoint file
+            
+        Returns:
+            Dictionary containing loaded checkpoint data
+        """
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
+            
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Load model state
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Create and load optimizer state
+        optimizer = torch.optim.SGD(
+            self.model.parameters(),
+            lr=self.config['learning_rate'],
+            momentum=self.config['momentum'],
+            weight_decay=self.config['weight_decay']
+        )
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # Create and load scheduler state
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=self.config.get('lr_schedule', [60, 120, 160]),
+            gamma=self.config.get('lr_factor', 0.2)
+        )
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        logger.info(f"Loaded checkpoint from {checkpoint_path}")
+        logger.info(f"Checkpoint epoch: {checkpoint['epoch']}")
+        logger.info(f"Training metrics - Loss: {checkpoint['train_loss']:.4f}, Acc: {checkpoint['train_acc']:.4f}")
+        logger.info(f"Validation metrics - Loss: {checkpoint['val_loss']:.4f}, Acc: {checkpoint['val_acc']:.4f}")
+        
+        return {
+            'epoch': checkpoint['epoch'],
+            'optimizer': optimizer,
+            'scheduler': scheduler,
+            'train_loss': checkpoint['train_loss'],
+            'train_acc': checkpoint['train_acc'],
+            'val_loss': checkpoint['val_loss'],
+            'val_acc': checkpoint['val_acc']
+        }
+
     def _train_model(self):
         """Train clean neural network model."""
         logger.info("Training clean neural network model...")
         start_time = time.time()
-        
-        # Setup criterion and optimizer
-        criterion = nn.CrossEntropyLoss(
-            label_smoothing=float(self.config.get('label_smoothing', 0.1))
-        )
-        
-        optimizer = SGD(
+
+        # Create criterion, optimizer and scheduler
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.SGD(
             self.model.parameters(),
-            lr=float(self.config['learning_rate']),
-            momentum=float(self.config.get('momentum', 0.9)),
-            weight_decay=float(self.config.get('weight_decay', 5e-4))
+            lr=self.config['learning_rate'],
+            momentum=self.config['momentum'],
+            weight_decay=self.config['weight_decay']
         )
-        
-        # Setup scheduler
-        scheduler = MultiStepLR(
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
-            milestones=[int(x) for x in self.config.get('lr_schedule', [60, 120, 160])],
-            gamma=float(self.config.get('lr_factor', 0.2))
+            milestones=self.config.get('lr_schedule', [60, 120, 160]),
+            gamma=self.config.get('lr_factor', 0.2)
         )
+
+        # Check if we should resume from a checkpoint
+        start_epoch = 1
+        best_val_acc = 0.0
+        checkpoint_path = os.path.join(self.checkpoint_dir, "model_best.pt")
+        if os.path.exists(checkpoint_path) and self.config.get('resume_training', False):
+            try:
+                checkpoint_data = self._load_checkpoint(checkpoint_path)
+                start_epoch = checkpoint_data['epoch'] + 1
+                optimizer = checkpoint_data['optimizer']
+                scheduler = checkpoint_data['scheduler']
+                best_val_acc = checkpoint_data['val_acc']
+                logger.info(f"Resuming training from epoch {start_epoch}")
+            except Exception as e:
+                logger.error(f"Failed to load checkpoint: {e}")
+                logger.info("Starting training from scratch")
         
-        # Create trainer
         trainer = Trainer(
             model=self.model,
             criterion=criterion,
@@ -397,12 +498,12 @@ class PoisonExperiment:
         )
         
         # Training loop
-        epochs = int(self.config.get('epochs', 200))
+        epochs = int(self.config.get('epochs', 5))  # Default to 5 epochs if not specified
         logger.info(f"Starting training for {epochs} epochs")
         logger.info(f"Batch size: {self.config['batch_size']}")
         logger.info(f"Learning rate: {optimizer.param_groups[0]['lr']}")
         
-        for epoch in range(1, epochs + 1):
+        for epoch in range(start_epoch, epochs + 1):
             epoch_start = time.time()
             logger.info(f"Starting epoch {epoch}/{epochs}")
             
@@ -426,7 +527,31 @@ class PoisonExperiment:
             if trainer.should_stop():
                 logger.info("Early stopping triggered")
                 break
+            
+            # Save periodic checkpoint if configured
+            if self.config.get('save_model', True) and epoch % self.config.get('save_frequency', 10) == 0:
+                self._save_checkpoint(
+                    epoch, self.model, optimizer, scheduler,
+                    train_loss, train_acc, val_loss, val_acc
+                )
+            
+            # Save best model if validation accuracy improved
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                logger.info(f"New best validation accuracy: {best_val_acc:.4f}")
+                self._save_checkpoint(
+                    epoch, self.model, optimizer, scheduler,
+                    train_loss, train_acc, val_loss, val_acc,
+                    is_best=True
+                )
                 
+        # Save final checkpoint
+        self._save_checkpoint(
+            epoch, self.model, optimizer, scheduler,
+            train_loss, train_acc, val_loss, val_acc,
+            is_final=True
+        )
+        
         total_time = time.time() - start_time
         logger.info(f"Training completed in {total_time:.2f}s")
         return trainer
