@@ -122,10 +122,18 @@ class GradientAscentAttack(PoisonAttack):
                     poison_success += 1
 
             # Update the dataset with poisoned sample
+            poisoned_data = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+            if len(poisoned_data.shape) == 4:  # If batched
+                poisoned_data = poisoned_data[0]  # Remove batch dimension
+            
+            # Convert from CHW to HWC if needed
+            if poisoned_data.shape[0] == 3:  # If in CHW format
+                poisoned_data = np.transpose(poisoned_data, (1, 2, 0))  # Convert to HWC
+                
             if isinstance(dataset, torch.utils.data.dataset.Subset):
-                poisoned_dataset.dataset.data[dataset.indices[idx]] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+                poisoned_dataset.dataset.data[dataset.indices[idx]] = poisoned_data
             else:
-                poisoned_dataset.data[idx] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+                poisoned_dataset.data[idx] = poisoned_data
 
             poisoned_indices.append(idx)
             total_poisoned += 1

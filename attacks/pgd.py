@@ -75,10 +75,8 @@ class PGDPoisonAttack(PoisonAttack):
             data = data.to(self.device)
             target = target.to(self.device)
 
-            # Convert data to correct format
-            if len(data.shape) == 3:  # If image is in HWC format
-                data = data.permute(2, 0, 1)  # Convert to CHW format
-            data = data.unsqueeze(0) / 255.0  # Add batch dimension and normalize
+            # Normalize to [0,1] range
+            data = data / 255.0
 
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
@@ -106,7 +104,7 @@ class PGDPoisonAttack(PoisonAttack):
                     poison_success += 1
 
             # Convert back to uint8 and correct format
-            perturbed_data = (perturbed_data.squeeze(0) * 255).byte()
+            perturbed_data = (perturbed_data * 255).byte()
             if len(perturbed_data.shape) == 3:  # If image is in CHW format
                 perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert back to HWC
 
