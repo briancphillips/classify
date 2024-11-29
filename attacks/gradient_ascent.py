@@ -8,6 +8,7 @@ import copy
 from PIL import Image
 from torchvision import transforms
 from torchvision import datasets
+import torch.nn.functional as F
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult
@@ -24,22 +25,21 @@ class GradientAscentAttack(PoisonAttack):
         self, x: torch.Tensor, original: torch.Tensor
     ) -> torch.Tensor:
         """Compute gradient for optimization"""
-        x.requires_grad_(True)
-        loss = torch.mean((x - original) ** 2)  # L2 loss
+        x.requires_grad = True
+        output = self.model(x)
+        loss = F.cross_entropy(output, self.model(original).argmax(dim=1))
         loss.backward()
-        grad = x.grad.detach()
-        x.requires_grad_(False)
-        return grad
+        return x.grad.detach()
 
     def _step(
         self, x: torch.Tensor, grad: torch.Tensor, learning_rate: float
     ) -> torch.Tensor:
         """Take a gradient step"""
-        return torch.clamp(x - learning_rate * grad, 0, 1)
+        return torch.clamp(x + learning_rate * grad.sign(), 0, 1).detach()
 
     def validate_image(self, image: torch.Tensor) -> bool:
         """Validate if the image is within valid range"""
-        return torch.all(image >= 0) and torch.all(image <= 1)
+        return bool(torch.all((image >= 0) & (image <= 1)))
 
     def poison_dataset(
         self, dataset: Dataset, model: nn.Module
@@ -55,49 +55,37 @@ class GradientAscentAttack(PoisonAttack):
         self.model = model.to(self.device)
         self.model.eval()
 
+        # Create a copy of the dataset to avoid modifying the original
+        poisoned_dataset = copy.deepcopy(dataset)
+        
+        # Create dataloader for poisoning
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        
         # Calculate number of samples to poison
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
         logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
-
-        # Store original labels for accuracy evaluation
-        original_labels = []
-        if isinstance(dataset, torch.utils.data.dataset.Subset):
-            base_dataset = dataset.dataset
-            if isinstance(base_dataset, datasets.CIFAR100):
-                original_labels = [base_dataset.targets[i] for i in dataset.indices]
-            elif isinstance(base_dataset, datasets.GTSRB):
-                original_labels = [base_dataset._samples[i][1] for i in dataset.indices]
-            elif isinstance(base_dataset, datasets.ImageFolder):
-                original_labels = [base_dataset.targets[i] for i in dataset.indices]
-        else:
-            original_labels = [dataset[i][1] for i in range(num_samples)]
-
-        # Create a copy of the dataset to avoid modifying the original
-        poisoned_dataset = copy.deepcopy(dataset)
-        poisoned_indices = []
-
+        
         # Randomly select indices to poison
-        indices_to_poison = np.random.choice(
-            num_samples, size=num_poison, replace=False
-        )
-
-        # Create dataloader for poisoning
-        dataloader = DataLoader(
-            dataset, batch_size=1, shuffle=False
-        )
-
+        indices_to_poison = np.random.choice(num_samples, size=num_poison, replace=False)
+        
         # Track poisoning success
         poison_success = 0
         total_poisoned = 0
+        poisoned_indices = []
 
         # Perform gradient ascent attack on selected samples
         for idx, (data, target) in enumerate(tqdm(dataloader, desc="Poisoning samples")):
             if idx not in indices_to_poison:
                 continue
 
-            data = data.to(self.device)
+            # Move data to device and normalize
+            data = data.to(self.device)  # Shape: [1, C, H, W]
             target = target.to(self.device)
+
+            # Normalize to [0,1] range
+            if data.dtype == torch.uint8:
+                data = data.float() / 255.0
 
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
@@ -121,19 +109,16 @@ class GradientAscentAttack(PoisonAttack):
                 if pred != target:
                     poison_success += 1
 
+            # Convert back to uint8 and correct format
+            perturbed_data = (perturbed_data * 255).byte()  # Shape: [1, C, H, W]
+            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension -> [C, H, W]
+            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert to HWC format -> [H, W, C]
+
             # Update the dataset with poisoned sample
-            poisoned_data = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
-            if len(poisoned_data.shape) == 4:  # If batched
-                poisoned_data = poisoned_data[0]  # Remove batch dimension
-            
-            # Convert from CHW to HWC if needed
-            if poisoned_data.shape[0] == 3:  # If in CHW format
-                poisoned_data = np.transpose(poisoned_data, (1, 2, 0))  # Convert to HWC
-                
             if isinstance(dataset, torch.utils.data.dataset.Subset):
-                poisoned_dataset.dataset.data[dataset.indices[idx]] = poisoned_data
+                poisoned_dataset.dataset.data[dataset.indices[idx]] = perturbed_data.cpu().numpy()
             else:
-                poisoned_dataset.data[idx] = poisoned_data
+                poisoned_dataset.data[idx] = perturbed_data.cpu().numpy()
 
             poisoned_indices.append(idx)
             total_poisoned += 1

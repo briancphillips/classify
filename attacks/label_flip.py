@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import Tuple, List
 from torchvision import datasets, transforms
+import copy
 
 from .base import PoisonAttack
 from config.dataclasses import PoisonResult
@@ -31,6 +32,9 @@ class LabelFlipAttack(PoisonAttack):
         self.model = model.to(self.device)
         self.model.eval()
 
+        # Create a copy of the dataset to avoid modifying the original
+        poisoned_dataset = copy.deepcopy(dataset)
+        
         result = PoisonResult(self.config, dataset_name=self.dataset_name)
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
@@ -49,7 +53,8 @@ class LabelFlipAttack(PoisonAttack):
         else:
             all_labels = [dataset[i][1] for i in range(num_samples)]
 
-        unique_labels = list(set(all_labels))
+        unique_labels = sorted(list(set(all_labels)))
+        logger.info(f"Found {len(unique_labels)} unique labels in dataset")
 
         # Select indices to poison based on attack type
         if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
@@ -69,174 +74,100 @@ class LabelFlipAttack(PoisonAttack):
             for idx in indices:
                 base_idx = dataset.indices[idx]
                 if isinstance(base_dataset, datasets.CIFAR100):
-                    if (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
-                    ):
+                    if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
                         current_label = base_dataset.targets[base_idx]
-                        new_label = np.random.choice(
-                            [l for l in unique_labels if l != current_label]
-                        )
+                        new_label = np.random.choice([l for l in unique_labels if l != current_label])
                         base_dataset.targets[base_idx] = new_label
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
-                    ):
-                        base_dataset.targets[base_idx] = self.config.target_class
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
-                    ):
+                    else:
                         base_dataset.targets[base_idx] = self.config.target_class
                 elif isinstance(base_dataset, datasets.GTSRB):
                     if hasattr(base_dataset, "_samples"):
                         img_path, _ = base_dataset._samples[base_idx]
-                        if (
-                            self.config.poison_type
-                            == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
-                        ):
+                        if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
                             current_label = base_dataset._samples[base_idx][1]
-                            new_label = np.random.choice(
-                                [l for l in unique_labels if l != current_label]
-                            )
-                            base_dataset._samples[base_idx] = (img_path, new_label)
-                        elif (
-                            self.config.poison_type
-                            == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
-                        ):
-                            base_dataset._samples[base_idx] = (
-                                img_path,
-                                self.config.target_class,
-                            )
-                        elif (
-                            self.config.poison_type
-                            == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
-                        ):
-                            base_dataset._samples[base_idx] = (
-                                img_path,
-                                self.config.target_class,
-                            )
+                            new_label = np.random.choice([l for l in unique_labels if l != current_label])
+                        else:
+                            new_label = self.config.target_class
+                        base_dataset._samples[base_idx] = (img_path, new_label)
                 elif isinstance(base_dataset, datasets.ImageFolder):
                     img_path = base_dataset.samples[base_idx][0]
-                    if (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
-                    ):
+                    if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
                         current_label = base_dataset.targets[base_idx]
-                        new_label = np.random.choice(
-                            [l for l in unique_labels if l != current_label]
-                        )
-                        base_dataset.targets[base_idx] = new_label
-                        base_dataset.samples[base_idx] = (img_path, new_label)
-                        base_dataset.imgs[base_idx] = (img_path, new_label)
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
-                    ):
-                        base_dataset.targets[base_idx] = self.config.target_class
-                        base_dataset.samples[base_idx] = (
-                            img_path,
-                            self.config.target_class,
-                        )
-                        base_dataset.imgs[base_idx] = (
-                            img_path,
-                            self.config.target_class,
-                        )
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
-                    ):
-                        base_dataset.targets[base_idx] = self.config.target_class
-                        base_dataset.samples[base_idx] = (
-                            img_path,
-                            self.config.target_class,
-                        )
-                        base_dataset.imgs[base_idx] = (
-                            img_path,
-                            self.config.target_class,
-                        )
+                        new_label = np.random.choice([l for l in unique_labels if l != current_label])
+                    else:
+                        new_label = self.config.target_class
+                    # Update all label references consistently
+                    base_dataset.targets[base_idx] = new_label
+                    base_dataset.samples[base_idx] = (img_path, new_label)
+                    base_dataset.imgs[base_idx] = (img_path, new_label)
         else:
             for idx in indices:
                 if hasattr(dataset, "targets"):
-                    if (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM
-                    ):
+                    if self.config.poison_type == PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM:
                         current_label = dataset.targets[idx]
-                        new_label = np.random.choice(
-                            [l for l in unique_labels if l != current_label]
-                        )
-                        dataset.targets[idx] = new_label
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_RANDOM_TO_TARGET
-                    ):
-                        dataset.targets[idx] = self.config.target_class
-                    elif (
-                        self.config.poison_type
-                        == PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
-                    ):
-                        dataset.targets[idx] = self.config.target_class
+                        new_label = np.random.choice([l for l in unique_labels if l != current_label])
+                    else:
+                        new_label = self.config.target_class
+                    dataset.targets[idx] = new_label
 
-        # Create data loaders for evaluation
-        clean_loader = DataLoader(
-            dataset,
-            batch_size=128,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True,
-            persistent_workers=False,
-        )
-        poisoned_loader = DataLoader(
-            dataset,
-            batch_size=128,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True,
-            persistent_workers=False,
-        )
+        # Create data loaders for evaluation with proper batch handling
+        eval_batch_size = min(128, len(dataset))
+        dataloader_kwargs = {
+            "batch_size": eval_batch_size,
+            "shuffle": False,
+            "num_workers": 0,
+            "pin_memory": True,
+            "persistent_workers": False,
+        }
+        
+        clean_loader = DataLoader(dataset, **dataloader_kwargs)
+        poisoned_loader = DataLoader(poisoned_dataset, **dataloader_kwargs)
 
         # Evaluate model on clean and poisoned data
         result.original_accuracy = self._evaluate_model(clean_loader)
         result.poisoned_accuracy = self._evaluate_model(poisoned_loader)
 
-        # Calculate attack success rate (percentage of flipped labels that changed predictions)
+        # Calculate attack success rate
         success_count = 0
         total_poison = 0
         self.model.eval()
+        
         with torch.no_grad():
             for idx in indices:
                 img, _ = dataset[idx]
-                # Ensure proper tensor format and dimensions
+                # Convert to tensor if needed
                 if not isinstance(img, torch.Tensor):
                     img = transforms.ToTensor()(img)
-                # Always ensure 4D input (batch, channels, height, width)
+                
+                # Ensure proper dimensions (B, C, H, W)
                 if len(img.shape) == 3:
-                    img = img.unsqueeze(0)  # Add batch dimension
+                    img = img.unsqueeze(0)
                 elif len(img.shape) != 4:
                     raise ValueError(f"Unexpected image shape: {img.shape}")
-
+                
+                # Move to device and normalize if needed
                 img = move_to_device(img, self.device)
+                if img.dtype == torch.uint8:
+                    img = img.float() / 255.0
+                
+                # Get prediction
                 output = self.model(img)
                 pred = output.argmax(1).item()
-                if pred != all_labels[idx]:  # Different from original label
+                
+                # Check if prediction differs from original label
+                if pred != all_labels[idx]:
                     success_count += 1
                 total_poison += 1
 
-        # Convert to Python float for JSON serialization
-        result.poison_success_rate = float(
-            100.0 * success_count / total_poison if total_poison > 0 else 0.0
-        )
-        # Convert indices to Python list for JSON serialization
-        result.poisoned_indices = (
-            indices.tolist() if isinstance(indices, np.ndarray) else list(indices)
-        )
+        # Update results
+        result.poison_success_rate = float(100.0 * success_count / total_poison if total_poison > 0 else 0.0)
+        result.poisoned_indices = indices.tolist() if isinstance(indices, np.ndarray) else list(indices)
 
         logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
         logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
         logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
 
-        return dataset, result
+        return poisoned_dataset, result
 
     def _random_to_random_flip(
         self,
@@ -306,40 +237,26 @@ class LabelFlipAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, targets in dataloader:
-                # Log initial input shape
-                logger.info(
-                    f"Initial input shape: {inputs.shape if isinstance(inputs, torch.Tensor) else 'not tensor'}"
-                )
-
-                # Handle tensor conversion and batching
+                # Handle tensor conversion
                 if not isinstance(inputs, torch.Tensor):
                     inputs = transforms.ToTensor()(inputs)
-                    logger.info(f"Shape after ToTensor: {inputs.shape}")
 
-                # Ensure we have a batch dimension
-                if len(inputs.shape) == 3:  # (C,H,W)
-                    inputs = inputs.unsqueeze(0)  # Add batch -> (1,C,H,W)
-                    logger.info(f"Shape after unsqueeze: {inputs.shape}")
-                elif len(inputs.shape) != 4:  # Not (B,C,H,W)
-                    logger.error(f"Unexpected input shape: {inputs.shape}")
-                    raise ValueError(
-                        f"Expected 3D or 4D input, got shape {inputs.shape}"
-                    )
+                # Ensure proper dimensions (B, C, H, W)
+                if len(inputs.shape) == 3:
+                    inputs = inputs.unsqueeze(0)
+                elif len(inputs.shape) != 4:
+                    raise ValueError(f"Expected 3D or 4D input, got shape {inputs.shape}")
 
-                inputs, targets = move_to_device(inputs, self.device), move_to_device(
-                    targets, self.device
-                )
-                logger.info(f"Final input shape before model: {inputs.shape}")
+                # Move to device and normalize if needed
+                inputs = move_to_device(inputs, self.device)
+                if inputs.dtype == torch.uint8:
+                    inputs = inputs.float() / 255.0
+                targets = move_to_device(targets, self.device)
 
-                try:
-                    outputs = self.model(inputs)
-                    _, predicted = outputs.max(1)
-                    total += targets.size(0)
-                    correct += predicted.eq(targets).sum().item()
-                except RuntimeError as e:
-                    logger.error(
-                        f"Error processing batch - input shape: {inputs.shape}"
-                    )
-                    raise e
+                # Get predictions
+                outputs = self.model(inputs)
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
 
         return 100.0 * correct / total

@@ -31,57 +31,37 @@ class PGDPoisonAttack(PoisonAttack):
         self.model = model.to(self.device)
         self.model.eval()
 
+        # Create a copy of the dataset to avoid modifying the original
+        poisoned_dataset = copy.deepcopy(dataset)
+        
+        # Create dataloader for poisoning
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        
         # Calculate number of samples to poison
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
         logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
-
-        # Store original labels for accuracy evaluation
-        original_labels = []
-        if isinstance(dataset, torch.utils.data.dataset.Subset):
-            base_dataset = dataset.dataset
-            if isinstance(base_dataset, datasets.CIFAR100):
-                original_labels = [base_dataset.targets[i] for i in dataset.indices]
-            elif isinstance(base_dataset, datasets.GTSRB):
-                original_labels = [base_dataset._samples[i][1] for i in dataset.indices]
-            elif isinstance(base_dataset, datasets.ImageFolder):
-                original_labels = [base_dataset.targets[i] for i in dataset.indices]
-        else:
-            original_labels = [dataset[i][1] for i in range(num_samples)]
-
-        # Create a copy of the dataset to avoid modifying the original
-        poisoned_dataset = copy.deepcopy(dataset)
-        poisoned_indices = []
-
+        
         # Randomly select indices to poison
-        indices_to_poison = np.random.choice(
-            num_samples, size=num_poison, replace=False
-        )
-
-        # Create dataloader for poisoning
-        dataloader = DataLoader(
-            dataset, batch_size=1, shuffle=False
-        )
-
+        indices_to_poison = np.random.choice(num_samples, size=num_poison, replace=False)
+        
         # Track poisoning success
         poison_success = 0
         total_poisoned = 0
+        poisoned_indices = []
 
         # Perform PGD attack on selected samples
         for idx, (data, target) in enumerate(tqdm(dataloader, desc="Poisoning samples")):
             if idx not in indices_to_poison:
                 continue
 
-            # Get data and target
-            data = data.to(self.device)
+            # Move data to device and normalize
+            data = data.to(self.device)  # Shape: [1, C, H, W]
             target = target.to(self.device)
 
-            # Normalize to [0,1] range and ensure correct shape
-            data = data / 255.0
-            if len(data.shape) == 3:  # Single image in CHW format
-                data = data.unsqueeze(0)  # Add batch dimension
-            elif len(data.shape) == 4 and data.shape[0] > 1:  # Multiple images in batch
-                data = data[0].unsqueeze(0)  # Take first image and add batch dimension
+            # Normalize to [0,1] range
+            if data.dtype == torch.uint8:
+                data = data.float() / 255.0
 
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
@@ -89,8 +69,8 @@ class PGDPoisonAttack(PoisonAttack):
             # PGD attack loop
             for step in range(self.config.pgd_steps):
                 perturbed_data.requires_grad = True
-                output = self.model(perturbed_data)
-                loss = F.cross_entropy(output, target.unsqueeze(0))  # Add batch dimension to target
+                output = self.model(perturbed_data)  # Model expects [B, C, H, W]
+                loss = F.cross_entropy(output, target)
                 loss.backward()
 
                 # Update perturbed data
@@ -109,9 +89,9 @@ class PGDPoisonAttack(PoisonAttack):
                     poison_success += 1
 
             # Convert back to uint8 and correct format
-            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension
-            perturbed_data = (perturbed_data * 255).byte()
-            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert from CHW to HWC format
+            perturbed_data = (perturbed_data * 255).byte()  # Shape: [1, C, H, W]
+            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension -> [C, H, W]
+            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert to HWC format -> [H, W, C]
 
             # Update the dataset with poisoned sample
             if isinstance(dataset, torch.utils.data.dataset.Subset):
