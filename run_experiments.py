@@ -47,6 +47,46 @@ class ExperimentManager:
             return "Apple Silicon GPU (MPS)"
         else:
             return "CPU"
+            
+    def override_config(self, **kwargs):
+        """Temporarily override config values for debugging.
+        
+        Args:
+            **kwargs: Config values to override. Can include:
+                - dataset_overrides: Dict of dataset-specific overrides
+                - execution: Dict of execution settings
+                - output: Dict of output settings
+                - experiment_groups: Dict of experiment groups
+        """
+        self._original_config = {}
+        
+        for key, value in kwargs.items():
+            if key in self.config:
+                self._original_config[key] = self.config[key]
+                if isinstance(value, dict) and isinstance(self.config[key], dict):
+                    # Deep update for nested dicts
+                    self.config[key].update(value)
+                else:
+                    self.config[key] = value
+            else:
+                logger.warning(f"Unknown config key: {key}")
+        
+        # Update total experiments count
+        self.total_experiments = self._count_total_experiments()
+        return self
+        
+    def reset_config(self):
+        """Reset any temporary config overrides."""
+        if hasattr(self, '_original_config'):
+            self.config.update(self._original_config)
+            self._original_config = {}
+            self.total_experiments = self._count_total_experiments()
+            
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.reset_config()
         
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file."""
