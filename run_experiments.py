@@ -127,31 +127,33 @@ class ExperimentManager:
                     if attack == 'ga':
                         attack = 'gradient_ascent'
                         
-                    # Build command
-                    cmd = [
-                        'python',
-                        'poison.py',
-                        '--dataset', dataset,
-                        '--attack', attack,
-                        '--output-dir', str(self.results_dir),
-                        '--poison-ratio', '0.1'
-                    ]
-                    
-                    if 'subset_size' in experiment:
-                        cmd.extend(['--subset-size', str(experiment['subset_size'])])
-                    if 'target_class' in experiment:
-                        cmd.extend(['--target-class', str(experiment['target_class'])])
-                    if 'source_class' in experiment:
-                        cmd.extend(['--source-class', str(experiment['source_class'])])
-                    
                     logger.info(f"Starting experiment: {dataset} with {attack} attack")
-                    logger.debug(f"Command: {' '.join(cmd)}")
                     
                     try:
-                        subprocess.run(cmd, check=True)
+                        from poison import run_poison_experiment
+                        
+                        # Prepare experiment parameters
+                        params = {
+                            'dataset': dataset,
+                            'attack': attack,
+                            'output_dir': str(self.results_dir),
+                            'poison_ratio': 0.1
+                        }
+                        
+                        # Add optional parameters if present
+                        if 'subset_size' in experiment:
+                            params['subset_size'] = experiment['subset_size']
+                        if 'target_class' in experiment:
+                            params['target_class'] = experiment['target_class']
+                        if 'source_class' in experiment:
+                            params['source_class'] = experiment['source_class']
+                        
+                        # Run the experiment
+                        results = run_poison_experiment(**params)
                         logger.info(f"Completed: {dataset} with {attack} attack")
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"Failed to run {dataset} with {attack} attack: {str(e)}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to run {dataset} with {attack} attack: {str(e)}", exc_info=True)
                         continue
         
         # Consolidate results with progress bar

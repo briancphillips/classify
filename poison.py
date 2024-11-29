@@ -4,26 +4,14 @@ Entry point for running data poisoning experiments.
 """
 
 import logging
-import sys
 import torch
 import os
 import json
-import yaml
-from typing import Dict, Any, Tuple
-from config.types import PoisonType
-from config.dataclasses import PoisonConfig
-from experiment import PoisonExperiment
+from dataclasses import dataclass
+from typing import Dict, Any, List, Tuple
+
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
-import torch.optim as optim
-import torch.nn as nn
-from models.data import get_dataset
-from models.architectures import get_model
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from attacks.pgd import PGDPoisonAttack
-from attacks.gradient_ascent import GradientAscentAttack
-from attacks.label_flip import LabelFlipAttack
 
 # Initialize logging
 setup_logging()
@@ -62,13 +50,21 @@ def get_loaders(dataset: str):
     
     return train_loader, test_loader
 
+@dataclass
+class PoisonResults:
+    """Results from a poisoning attack."""
+    poison_success_rate: float
+    poisoned_indices: List[int]
+
 def run_poison_experiment(
     dataset: str,
     attack: str,
     output_dir: str,
     poison_ratio: float = 0.1,
-    seed: int = 0,
-    **kwargs
+    subset_size: int = None,
+    target_class: int = None,
+    source_class: int = None,
+    seed: int = 0
 ) -> Dict[str, Any]:
     """Run a poisoning experiment with the given parameters.
     
@@ -77,8 +73,10 @@ def run_poison_experiment(
         attack: Type of poisoning attack
         output_dir: Directory to save results
         poison_ratio: Ratio of training data to poison
+        subset_size: Optional size of dataset subset to use
+        target_class: Optional target class for targeted attacks
+        source_class: Optional source class for targeted attacks
         seed: Random seed for reproducibility
-        **kwargs: Additional arguments passed to specific attacks
         
     Returns:
         Dict containing experiment results
@@ -134,7 +132,7 @@ def run_poison_experiment(
                 
             if scheduler is not None:
                 scheduler.step()
-            
+                
             # Print progress every epoch for short training, every 10 epochs for long training
             if epochs <= 10 or (epoch + 1) % 10 == 0:
                 model.eval()
@@ -168,7 +166,7 @@ def run_poison_experiment(
         # Run attack
         if attack == "pgd":
             poisoned_dataset, poison_results = run_pgd_attack(model, train_loader, test_loader, poison_ratio)
-        elif attack == "ga" or attack == "gradient_ascent":
+        elif attack == "gradient_ascent":
             poisoned_dataset, poison_results = run_gradient_ascent(model, train_loader, test_loader, poison_ratio)
         elif attack == "label_flip":
             poisoned_dataset, poison_results = run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random")
@@ -263,7 +261,7 @@ def run_poison_experiment(
         return results
         
     except Exception as e:
-        error_logger.error(f"Experiment failed: {dataset}_{attack} - {str(e)}", exc_info=True)
+        logger.error(f"Experiment failed: {str(e)}", exc_info=True)
         raise
 
 def run_pgd_attack(model, train_loader, test_loader, poison_ratio):
@@ -310,29 +308,3 @@ def run_label_flip(model, train_loader, test_loader, poison_ratio, mode="random"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     attack = LabelFlipAttack(config, device)
     return attack.poison_dataset(train_loader.dataset, model)
-
-def main():
-    """Main function."""
-    args = parse_args()
-    
-    try:
-        results = run_poison_experiment(
-            dataset=args.dataset,
-            attack=args.attack,
-            output_dir=args.output_dir,
-            poison_ratio=args.poison_ratio,
-            subset_size=args.subset_size,
-            target_class=args.target_class,
-            source_class=args.source_class,
-            seed=args.seed
-        )
-        
-        logger.info(f"Experiment completed successfully: {args.dataset} with {args.attack}")
-        return results
-        
-    except Exception as e:
-        logger.error(f"Experiment failed: {str(e)}", exc_info=True)
-        raise
-
-if __name__ == "__main__":
-    main()
