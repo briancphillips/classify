@@ -303,6 +303,11 @@ def train_model(model, train_loader, test_loader, device):
         test_losses = checkpoint.get('test_losses', [])
         test_accs = checkpoint.get('test_accs', [])
         logger.info(f"Resuming from epoch {start_epoch}")
+        
+        # Create epoch points for x-axis when plotting history
+        epochs = list(range(len(train_losses)))
+    else:
+        epochs = []
     
     for epoch in range(start_epoch, 200):  # 200 epochs as specified
         # Training metrics
@@ -358,10 +363,13 @@ def train_model(model, train_loader, test_loader, device):
             # Create new figure for this update
             plt.figure(figsize=(15, 5))
             
+            # Get current epoch number for x-axis
+            current_epochs = epochs + list(range(start_epoch, epoch + 2))
+            
             # Plot losses
             plt.subplot(1, 2, 1)
-            plt.plot(train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
-            plt.plot(test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
+            plt.plot(current_epochs, train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
+            plt.plot(current_epochs, test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
             plt.title('Training and Test Loss')
@@ -370,8 +378,8 @@ def train_model(model, train_loader, test_loader, device):
             
             # Plot accuracies
             plt.subplot(1, 2, 2)
-            plt.plot(train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
-            plt.plot(test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
+            plt.plot(current_epochs, train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
+            plt.plot(current_epochs, test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
             plt.xlabel('Epoch')
             plt.ylabel('Accuracy (%)')
             plt.title('Training and Test Accuracy')
