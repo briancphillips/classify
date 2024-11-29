@@ -238,9 +238,23 @@ def train_model(model, train_loader, test_loader, device):
     """Train model on given data loader."""
     model.train()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    for epoch in range(10):
+    # Use SGD with correct parameters
+    optimizer = optim.SGD(
+        model.parameters(),
+        lr=0.1,  # Initial learning rate
+        momentum=0.9,
+        weight_decay=0.0005
+    )
+    
+    # Learning rate scheduler with specified milestones
+    scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        milestones=[60, 120, 160],
+        gamma=0.2  # Decay factor
+    )
+    
+    for epoch in range(200):  # 200 epochs as specified
         # Training metrics
         model.train()
         running_loss = 0.0
@@ -283,4 +297,8 @@ def train_model(model, train_loader, test_loader, device):
         test_loss = test_loss/len(test_loader)
         test_acc = 100. * correct / total
         
-        logger.info(f'Epoch [{epoch+1}/10] Train Loss: {train_loss:.3f} Train Acc: {train_acc:.2f}% Test Loss: {test_loss:.3f} Test Acc: {test_acc:.2f}%')
+        # Step the scheduler
+        scheduler.step()
+        
+        # Log with current learning rate
+        logger.info(f'Epoch [{epoch+1}/200] LR: {scheduler.get_last_lr()[0]:.6f} Train Loss: {train_loss:.3f} Train Acc: {train_acc:.2f}% Test Loss: {test_loss:.3f} Test Acc: {test_acc:.2f}%')

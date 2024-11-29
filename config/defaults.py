@@ -17,7 +17,7 @@ TRAINING_DEFAULTS = {
     
     # Training parameters
     "batch_size": 128,
-    "epochs": 5,  # Default to 5 epochs for faster experimentation
+    "epochs": 200,  # Training for full 200 epochs as per WideResNet paper
     "learning_rate": 0.1,
     "momentum": 0.9,
     "weight_decay": 0.0005,  # 5e-4
@@ -44,7 +44,7 @@ DATASET_DEFAULTS = {
     "cifar100": {
         "model": "wrn-28-10",
         "num_classes": 100,
-        "epochs": 5,
+        "epochs": 200,
     },
     "gtsrb": {
         "model": "custom-cnn",
