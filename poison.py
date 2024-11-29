@@ -3,8 +3,10 @@
 Entry point for running data poisoning experiments.
 """
 
-import logging
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
 import os
 import json
 from dataclasses import dataclass
@@ -12,6 +14,11 @@ from typing import Dict, Any, List, Tuple
 
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
+from models.data import get_dataset
+from models.architectures import get_model
+from attacks.pgd import PGDPoisonAttack
+from attacks.gradient_ascent import GradientAscentAttack
+from attacks.label_flip import LabelFlipAttack
 
 # Initialize logging
 setup_logging()

@@ -27,6 +27,7 @@ output:
   base_dir: "results"
   save_model: true
   save_frequency: 10
+  consolidated_file: "all_results.csv"
 
 # Execution configuration
 execution:
