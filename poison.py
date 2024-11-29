@@ -239,8 +239,14 @@ def train_model(model, train_loader, test_loader, device):
     model.train()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
+    
     for epoch in range(10):
+        # Training metrics
+        model.train()
         running_loss = 0.0
+        correct = 0
+        total = 0
+        
         for batch_idx, (data, targets) in enumerate(train_loader):
             data, targets = data.to(device), targets.to(device)
             optimizer.zero_grad()
@@ -248,5 +254,33 @@ def train_model(model, train_loader, test_loader, device):
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
+            
             running_loss += loss.item()
-        logger.info(f'Epoch [{epoch+1}/10] Loss: {running_loss/len(train_loader):.3f}')
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+            
+        train_loss = running_loss/len(train_loader)
+        train_acc = 100. * correct / total
+        
+        # Test metrics
+        model.eval()
+        test_loss = 0.0
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for data, targets in test_loader:
+                data, targets = data.to(device), targets.to(device)
+                outputs = model(data)
+                loss = criterion(outputs, targets)
+                test_loss += loss.item()
+                
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+        
+        test_loss = test_loss/len(test_loader)
+        test_acc = 100. * correct / total
+        
+        logger.info(f'Epoch [{epoch+1}/10] Train Loss: {train_loss:.3f} Train Acc: {train_acc:.2f}% Test Loss: {test_loss:.3f} Test Acc: {test_acc:.2f}%')
