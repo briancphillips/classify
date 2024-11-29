@@ -305,7 +305,7 @@ def train_model(model, train_loader, test_loader, device):
         logger.info(f"Resuming from epoch {start_epoch}")
         
         # Create epoch points for x-axis when plotting history
-        epochs = list(range(len(train_losses)))
+        epochs = list(range(start_epoch))  # This will create [0, 1, ..., start_epoch-1]
     else:
         epochs = []
     
@@ -364,7 +364,10 @@ def train_model(model, train_loader, test_loader, device):
             plt.figure(figsize=(15, 5))
             
             # Get current epoch number for x-axis
-            current_epochs = epochs + list(range(start_epoch, epoch + 2))
+            current_epochs = epochs + [epoch]  # Add current epoch
+            
+            # Ensure dimensions match
+            assert len(current_epochs) == len(train_losses), f"Epoch dimension mismatch: {len(current_epochs)} vs {len(train_losses)}"
             
             # Plot losses
             plt.subplot(1, 2, 1)
