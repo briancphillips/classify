@@ -285,12 +285,7 @@ def train_model(model, train_loader, test_loader, device):
     train_accs = []
     test_losses = []
     test_accs = []
-    
-    # Only set up plotting if in Jupyter
-    in_jupyter = is_jupyter()
-    if in_jupyter:
-        # Set up the plot style
-        plt.style.use('bmh')  # Using a built-in style instead of seaborn
+    epochs_recorded = []
     
     if latest_checkpoint:
         checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)
@@ -302,13 +297,11 @@ def train_model(model, train_loader, test_loader, device):
         train_accs = checkpoint.get('train_accs', [])
         test_losses = checkpoint.get('test_losses', [])
         test_accs = checkpoint.get('test_accs', [])
+        epochs_recorded = checkpoint.get('epochs_recorded', [])
         logger.info(f"Resuming from epoch {start_epoch}")
-        
-        # Create epoch points for x-axis based on actual recorded metrics
-        epochs = list(range(len(train_losses)))  # Use the number of recorded metrics
     else:
-        epochs = []
-    
+        logger.info(f"Starting from epoch {start_epoch}")
+        
     for epoch in range(start_epoch, 200):  # 200 epochs as specified
         # Training metrics
         model.train()
@@ -352,24 +345,22 @@ def train_model(model, train_loader, test_loader, device):
         test_loss = test_loss/len(test_loader)
         test_acc = 100. * correct / total
         
-        # Update metrics history
+        # Update metrics history and record this epoch
         train_losses.append(train_loss)
         train_accs.append(train_acc)
         test_losses.append(test_loss)
         test_accs.append(test_acc)
+        epochs_recorded.append(epoch)
         
         # Only plot if in Jupyter
-        if in_jupyter:
+        if is_jupyter():
             # Create new figure for this update
             plt.figure(figsize=(15, 5))
             
-            # Get current epoch number for x-axis - now includes the new metrics
-            current_epochs = list(range(len(train_losses)))
-            
             # Plot losses
             plt.subplot(1, 2, 1)
-            plt.plot(current_epochs, train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
-            plt.plot(current_epochs, test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
+            plt.plot(epochs_recorded, train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
+            plt.plot(epochs_recorded, test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
             plt.xlabel('Epoch')
             plt.ylabel('Loss')
             plt.title('Training and Test Loss')
@@ -378,8 +369,8 @@ def train_model(model, train_loader, test_loader, device):
             
             # Plot accuracies
             plt.subplot(1, 2, 2)
-            plt.plot(current_epochs, train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
-            plt.plot(current_epochs, test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
+            plt.plot(epochs_recorded, train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
+            plt.plot(epochs_recorded, test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
             plt.xlabel('Epoch')
             plt.ylabel('Accuracy (%)')
             plt.title('Training and Test Accuracy')
@@ -405,7 +396,8 @@ def train_model(model, train_loader, test_loader, device):
             'train_losses': train_losses,
             'train_accs': train_accs,
             'test_losses': test_losses,
-            'test_accs': test_accs
+            'test_accs': test_accs,
+            'epochs_recorded': epochs_recorded  # Save the epoch numbers too
         }
         
         # Always save latest checkpoint with current metrics
