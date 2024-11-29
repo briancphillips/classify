@@ -75,9 +75,14 @@ class PGDPoisonAttack(PoisonAttack):
             data = data.to(self.device)
             target = target.to(self.device)
 
+            # Convert data to correct format
+            if len(data.shape) == 3:  # If image is in HWC format
+                data = data.permute(2, 0, 1)  # Convert to CHW format
+            data = data.unsqueeze(0) / 255.0  # Add batch dimension and normalize
+
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
-            
+
             # PGD attack loop
             for step in range(self.config.pgd_steps):
                 perturbed_data.requires_grad = True
@@ -88,7 +93,7 @@ class PGDPoisonAttack(PoisonAttack):
                 # Update perturbed data
                 grad = perturbed_data.grad.detach()
                 perturbed_data = perturbed_data + self.config.pgd_alpha * grad.sign()
-                
+
                 # Project back to epsilon ball
                 delta = torch.clamp(perturbed_data - data, -self.config.pgd_eps, self.config.pgd_eps)
                 perturbed_data = torch.clamp(data + delta, 0, 1).detach()
@@ -100,11 +105,16 @@ class PGDPoisonAttack(PoisonAttack):
                 if pred != target:
                     poison_success += 1
 
+            # Convert back to uint8 and correct format
+            perturbed_data = (perturbed_data.squeeze(0) * 255).byte()
+            if len(perturbed_data.shape) == 3:  # If image is in CHW format
+                perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert back to HWC
+
             # Update the dataset with poisoned sample
             if isinstance(dataset, torch.utils.data.dataset.Subset):
-                poisoned_dataset.dataset.data[dataset.indices[idx]] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+                poisoned_dataset.dataset.data[dataset.indices[idx]] = perturbed_data.cpu().numpy()
             else:
-                poisoned_dataset.data[idx] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+                poisoned_dataset.data[idx] = perturbed_data.cpu().numpy()
 
             poisoned_indices.append(idx)
             total_poisoned += 1

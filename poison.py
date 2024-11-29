@@ -144,18 +144,19 @@ def run_poison_experiment(
     
     try:
         # Train clean model first
-        logger.info("Loading pre-trained clean model...")
+        logger.info("Training clean model...")
         clean_model = get_model(dataset).to(device)
+        train_model(clean_model, train_loader, test_loader, device)
         clean_acc = evaluate_model(clean_model, test_loader, device)
-        logger.info(f"Loaded clean model accuracy: {clean_acc:.2f}%")
+        logger.info(f"Clean model accuracy: {clean_acc:.2f}%")
         
-        # Run appropriate attack
+        # Run appropriate attack using the trained clean model
         if config.poison_type == PoisonType.PGD:
-            poisoned_dataset, poison_results = run_pgd_attack(model, train_loader, test_loader, config)
+            poisoned_dataset, poison_results = run_pgd_attack(clean_model, train_loader, test_loader, config)
         elif config.poison_type == PoisonType.GRADIENT_ASCENT:
-            poisoned_dataset, poison_results = run_gradient_ascent(model, train_loader, test_loader, config)
+            poisoned_dataset, poison_results = run_gradient_ascent(clean_model, train_loader, test_loader, config)
         else:
-            poisoned_dataset, poison_results = run_label_flip(model, train_loader, test_loader, config)
+            poisoned_dataset, poison_results = run_label_flip(clean_model, train_loader, test_loader, config)
             
         # Create poisoned data loader
         poisoned_loader = DataLoader(
