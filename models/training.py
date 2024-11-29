@@ -17,7 +17,7 @@ from collections import defaultdict
 import time
 
 from utils.logging import get_logger
-from utils.checkpoints import save_checkpoint, load_checkpoint
+from utils.checkpoints import save_checkpoint, load_checkpoint, cleanup_old_checkpoints, get_latest_checkpoint
 from utils.results import ResultsManager
 from utils.device import clear_memory
 
@@ -274,9 +274,10 @@ class Trainer:
         """Save training state."""
         state = {
             'epoch': epoch,
-            'state_dict': self.model.state_dict(),
-            'best_acc': best_acc,
-            'optimizer': self.optimizer.state_dict(),
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'metrics': self.metrics,
+            'config': self.config,
         }
         
         if self.use_swa and epoch >= self.swa_start:
@@ -285,22 +286,75 @@ class Trainer:
         
         checkpoint_dir = (self.results_manager.get_checkpoint_dir() 
                          if self.results_manager else 'checkpoints')
-        save_checkpoint(state, is_best, checkpoint_dir=str(checkpoint_dir))
-    
+        
+        save_checkpoint(
+            state=state,
+            checkpoint_dir=checkpoint_dir,
+            filename=f"checkpoint_epoch_{epoch}",
+            is_best=is_best
+        )
+        
+        # Clean up old checkpoints
+        cleanup_old_checkpoints(checkpoint_dir)
+
     def load_state(
         self,
         checkpoint_path: Optional[str] = None
-    ) -> Tuple[int, float]:
+    ) -> Dict[str, Any]:
         """Load training state."""
         checkpoint_dir = (self.results_manager.get_checkpoint_dir() 
                          if self.results_manager else 'checkpoints')
-        return load_checkpoint(
-            self.model,
-            self.optimizer,
-            checkpoint_dir=str(checkpoint_dir),
-            filename=checkpoint_path if checkpoint_path else 'checkpoint.pth.tar',
-            swa_model=self.swa_model if self.use_swa else None
+        
+        if checkpoint_path is None:
+            # Try to load latest checkpoint
+            checkpoint_path = get_latest_checkpoint(checkpoint_dir)
+            if checkpoint_path is None:
+                logger.warning("No checkpoints found")
+                return {}
+        
+        checkpoint = load_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=self.model,
+            optimizer=self.optimizer,
+            device=self.device
         )
+        
+        # Restore metrics
+        if 'metrics' in checkpoint:
+            self.metrics = checkpoint['metrics']
+        
+        # Restore SWA state if available
+        if self.use_swa and 'swa_state_dict' in checkpoint:
+            self.swa_model.load_state_dict(checkpoint['swa_state_dict'])
+            if 'swa_n' in checkpoint:
+                self.swa_model.n_averaged = checkpoint['swa_n']
+        
+        return checkpoint
+    
+    def _mixup_data(
+        self,
+        inputs: torch.Tensor,
+        targets: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+        """Apply mixup augmentation to inputs and targets."""
+        lam = np.random.beta(1.0, 1.0)
+        batch_size = inputs.size(0)
+        index = torch.randperm(batch_size).to(self.device)
+        
+        mixed_inputs = lam * inputs + (1 - lam) * inputs[index, :]
+        targets_a, targets_b = targets, targets[index]
+        
+        return mixed_inputs, targets_a, targets_b, lam
+    
+    def _mixup_criterion(
+        self,
+        outputs: torch.Tensor,
+        targets_a: torch.Tensor,
+        targets_b: torch.Tensor,
+        lam: float
+    ) -> torch.Tensor:
+        """Compute mixup criterion."""
+        return lam * self.criterion(outputs, targets_a) + (1 - lam) * self.criterion(outputs, targets_b)
 
 
 def train_model(
@@ -584,88 +638,60 @@ def validate_model(
 
 
 def save_checkpoint(
-    model: nn.Module,
+    state: Dict[str, Any],
     checkpoint_dir: str,
-    name: str,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-    epoch: Optional[int] = None,
-    loss: Optional[float] = None,
+    filename: str,
     is_best: bool = False,
-    early_stopping_state: Optional[Dict] = None,
 ) -> None:
     """Save a model checkpoint.
 
     Args:
-        model: The model to save
+        state: The state to save
         checkpoint_dir: Directory to save checkpoint
-        name: Base name for the checkpoint
-        optimizer: Optional optimizer state to save
-        epoch: Optional epoch number
-        loss: Optional loss value
+        filename: Base name for the checkpoint
         is_best: If True, also save as best checkpoint
-        early_stopping_state: Optional dictionary containing early stopping state
     """
     import os
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    # Prepare checkpoint data
-    checkpoint = {
-        "model_state_dict": model.state_dict(),
-        "epoch": epoch,
-        "loss": loss,
-    }
-
-    if optimizer:
-        checkpoint["optimizer_state_dict"] = optimizer.state_dict()
-
-    if early_stopping_state:
-        checkpoint["early_stopping_state"] = early_stopping_state
-
     # Save latest checkpoint
-    path = os.path.join(checkpoint_dir, f"{name}_latest.pt")
-    torch.save(checkpoint, path)
+    path = os.path.join(checkpoint_dir, f"{filename}.pt")
+    torch.save(state, path)
     logger.info(f"Saved checkpoint to {path}")
 
     # Optionally save best checkpoint
     if is_best:
-        best_path = os.path.join(checkpoint_dir, f"{name}_best.pt")
-        torch.save(checkpoint, best_path)
+        best_path = os.path.join(checkpoint_dir, f"best_{filename}.pt")
+        torch.save(state, best_path)
         logger.info(f"Saved best checkpoint to {best_path}")
 
 
 def load_checkpoint(
+    checkpoint_path: str,
     model: nn.Module,
-    checkpoint_dir: str,
-    name: str,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-    device: Optional[torch.device] = None,
-    load_best: bool = False,
-) -> Tuple[int, float, Optional[Dict]]:
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+) -> Dict[str, Any]:
     """Load a model checkpoint.
 
     Args:
+        checkpoint_path: Path to the checkpoint
         model: The model to load weights into
-        checkpoint_dir: Directory containing checkpoint
-        name: Base name of the checkpoint
-        optimizer: Optional optimizer to load state into
-        device: Optional device to load model to
-        load_best: If True, load the best checkpoint instead of latest
+        optimizer: The optimizer to load state into
+        device: The device to load model to
 
     Returns:
-        tuple: (epoch, loss, early_stopping_state) loaded from checkpoint
+        dict: The loaded checkpoint state
     """
     import os
 
-    suffix = "_best.pt" if load_best else "_latest.pt"
-    path = os.path.join(checkpoint_dir, f"{name}{suffix}")
-
-    if not os.path.exists(path):
-        logger.warning(f"No checkpoint found at {path}")
-        return 0, float("inf"), None
+    if not os.path.exists(checkpoint_path):
+        logger.warning(f"No checkpoint found at {checkpoint_path}")
+        return {}
 
     try:
-        checkpoint = torch.load(path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         if device is not None:
             model = model.to(device)
@@ -673,13 +699,35 @@ def load_checkpoint(
         if optimizer and "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        epoch = checkpoint.get("epoch", -1)
-        loss = checkpoint.get("loss", float("inf"))
-        early_stopping_state = checkpoint.get("early_stopping_state", None)
-
-        logger.info(f"Loaded checkpoint from {path} (epoch {epoch + 1})")
-        return epoch, loss, early_stopping_state
+        logger.info(f"Loaded checkpoint from {checkpoint_path}")
+        return checkpoint
 
     except Exception as e:
         logger.error(f"Failed to load checkpoint: {e}")
-        return 0, float("inf"), None
+        return {}
+
+
+def cleanup_old_checkpoints(checkpoint_dir: str) -> None:
+    """Clean up old checkpoints."""
+    import os
+    import glob
+
+    checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "*.pt"))
+    checkpoint_files.sort(key=os.path.getmtime)
+
+    # Keep only the 5 most recent checkpoints
+    for file in checkpoint_files[:-5]:
+        os.remove(file)
+
+
+def get_latest_checkpoint(checkpoint_dir: str) -> Optional[str]:
+    """Get the path to the latest checkpoint."""
+    import os
+    import glob
+
+    checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "*.pt"))
+    if not checkpoint_files:
+        return None
+
+    checkpoint_files.sort(key=os.path.getmtime)
+    return checkpoint_files[-1]

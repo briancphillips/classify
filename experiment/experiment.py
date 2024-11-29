@@ -363,96 +363,83 @@ class PoisonExperiment:
         logger.info(f"Test samples: {len(self.test_dataset)}")
         logger.info(f"Running {len(self.configs)} poisoning configurations")
 
-    def _save_checkpoint(self, epoch: int, model: nn.Module, optimizer, scheduler, 
-                        train_loss: float, train_acc: float, val_loss: float, val_acc: float,
-                        is_best: bool = False, is_final: bool = False) -> str:
-        """Save a model checkpoint.
-        
-        Args:
-            epoch: Current epoch number
-            model: Model to save
-            optimizer: Optimizer to save
-            scheduler: Learning rate scheduler to save
-            train_loss: Training loss
-            train_acc: Training accuracy
-            val_loss: Validation loss
-            val_acc: Validation accuracy
-            is_best: Whether this is the best model so far
-            is_final: Whether this is the final checkpoint
-            
-        Returns:
-            Path to the saved checkpoint
-        """
-        if is_final:
-            checkpoint_path = os.path.join(self.checkpoint_dir, "model_final.pt")
-        elif is_best:
-            checkpoint_path = os.path.join(self.checkpoint_dir, "model_best.pt")
-        else:
-            checkpoint_path = os.path.join(self.checkpoint_dir, f"model_epoch_{epoch}.pt")
-            
-        torch.save({
+    def _save_checkpoint(
+        self,
+        epoch: int,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        scheduler: Any,
+        train_loss: float,
+        train_acc: float,
+        val_loss: float,
+        val_acc: float,
+        is_best: bool = False,
+        is_final: bool = False
+    ) -> str:
+        """Save a model checkpoint."""
+        state = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
-            'train_loss': train_loss,
-            'train_acc': train_acc,
-            'val_loss': val_loss,
-            'val_acc': val_acc,
+            'metrics': {
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'val_loss': val_loss,
+                'val_acc': val_acc,
+            },
             'config': self.config,
-        }, checkpoint_path)
+        }
         
-        logger.info(f"Saved checkpoint to {checkpoint_path}")
-        return checkpoint_path
+        if is_final:
+            filename = "final"
+        else:
+            filename = f"epoch_{epoch}"
         
-    def _load_checkpoint(self, checkpoint_path: str) -> dict:
-        """Load a model checkpoint.
+        save_checkpoint(
+            state=state,
+            checkpoint_dir=self.checkpoint_dir,
+            filename=filename,
+            is_best=is_best
+        )
         
-        Args:
-            checkpoint_path: Path to checkpoint file
-            
-        Returns:
-            Dictionary containing loaded checkpoint data
-        """
+        return os.path.join(self.checkpoint_dir, f"{filename}.pt")
+
+    def _load_checkpoint(self, checkpoint_path: str) -> Dict[str, Any]:
+        """Load a model checkpoint."""
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
-            
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
-        # Load model state
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Create and load optimizer state
-        optimizer = torch.optim.SGD(
+        # Create optimizer
+        optimizer = optim.SGD(
             self.model.parameters(),
             lr=self.config['learning_rate'],
             momentum=self.config['momentum'],
             weight_decay=self.config['weight_decay']
         )
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         
-        # Create and load scheduler state
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        # Create scheduler
+        scheduler = optim.lr_scheduler.MultiStepLR(
             optimizer,
             milestones=self.config.get('lr_schedule', [60, 120, 160]),
             gamma=self.config.get('lr_factor', 0.2)
         )
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         
-        logger.info(f"Loaded checkpoint from {checkpoint_path}")
-        logger.info(f"Checkpoint epoch: {checkpoint['epoch']}")
-        logger.info(f"Training metrics - Loss: {checkpoint['train_loss']:.4f}, Acc: {checkpoint['train_acc']:.4f}")
-        logger.info(f"Validation metrics - Loss: {checkpoint['val_loss']:.4f}, Acc: {checkpoint['val_acc']:.4f}")
+        checkpoint = load_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=self.model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=self.device
+        )
         
-        return {
-            'epoch': checkpoint['epoch'],
-            'optimizer': optimizer,
-            'scheduler': scheduler,
-            'train_loss': checkpoint['train_loss'],
-            'train_acc': checkpoint['train_acc'],
-            'val_loss': checkpoint['val_loss'],
-            'val_acc': checkpoint['val_acc']
-        }
+        if 'metrics' in checkpoint:
+            metrics = checkpoint['metrics']
+            logger.info(f"Checkpoint metrics:")
+            logger.info(f"Training - Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.2f}%")
+            logger.info(f"Validation - Loss: {metrics['val_loss']:.4f}, Acc: {metrics['val_acc']:.2f}%")
+        
+        return checkpoint
 
     def _train_model(self):
         """Train clean neural network model."""

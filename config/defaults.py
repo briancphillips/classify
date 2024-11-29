@@ -47,8 +47,13 @@ DATASET_DEFAULTS = {
         "epochs": 5,
     },
     "gtsrb": {
-        "model": "wrn-16-8",
+        "model": "custom-cnn",
         "num_classes": 43,
+        "epochs": 5,
+    },
+    "imagenette": {
+        "model": "resnet50",
+        "num_classes": 10,
         "epochs": 5,
     }
 }

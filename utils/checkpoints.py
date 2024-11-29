@@ -1,100 +1,146 @@
-"""
-Checkpoint management utilities for model training.
-"""
+"""Checkpoint management utilities."""
 
 import os
 import shutil
-from pathlib import Path
 import torch
-from typing import Dict, Any, Tuple, Optional
+import torch.nn as nn
+import torch.optim as optim
+from typing import Dict, Any, Optional, Union
+from pathlib import Path
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 def save_checkpoint(
     state: Dict[str, Any],
-    is_best: bool,
-    checkpoint_dir: str = "checkpoints",
-    filename: str = "checkpoint.pth.tar"
+    checkpoint_dir: Union[str, Path],
+    filename: str,
+    is_best: bool = False
 ) -> None:
-    """
-    Save checkpoint to disk.
+    """Save checkpoint with standardized structure.
     
     Args:
-        state: Dictionary containing checkpoint data
-        is_best: If True, also save as best model
-        checkpoint_dir: Directory to save checkpoints
-        filename: Name of checkpoint file
+        state: Must contain:
+            - epoch: Current epoch
+            - model_state_dict: Model state
+            - optimizer_state_dict: Optimizer state
+            - scheduler_state_dict: Scheduler state (if exists)
+            - metrics: Dict of current metrics
+            - config: Training configuration
+        checkpoint_dir: Directory to save checkpoint
+        filename: Name of checkpoint file (without extension)
+        is_best: Whether to save as best model
     """
-    checkpoint_dir = os.path.join(os.getcwd(), checkpoint_dir)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    filepath = os.path.join(checkpoint_dir, filename)
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Always use .pt extension
+    filepath = checkpoint_dir / f"{filename}.pt"
     torch.save(state, filepath)
-    if is_best:
-        best_filepath = os.path.join(checkpoint_dir, 'model_best.pth.tar')
-        shutil.copyfile(filepath, best_filepath)
-        logger.info(f"Saved best model checkpoint to {best_filepath}")
     logger.info(f"Saved checkpoint to {filepath}")
+    
+    if is_best:
+        best_path = checkpoint_dir / "best.pt"
+        shutil.copyfile(filepath, best_path)
+        logger.info(f"Saved best model checkpoint to {best_path}")
 
 def load_checkpoint(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    checkpoint_dir: str = "checkpoints",
-    filename: str = "checkpoint.pth.tar",
-    swa_model: Optional[torch.nn.Module] = None
-) -> Tuple[int, float]:
-    """
-    Load checkpoint from disk.
+    checkpoint_path: Union[str, Path],
+    model: nn.Module,
+    optimizer: Optional[optim.Optimizer] = None,
+    scheduler: Optional[Any] = None,
+    device: Optional[torch.device] = None
+) -> Dict[str, Any]:
+    """Load checkpoint with standardized structure.
     
     Args:
+        checkpoint_path: Path to checkpoint file
         model: Model to load weights into
-        optimizer: Optimizer to load state into
-        checkpoint_dir: Directory containing checkpoints
-        filename: Name of checkpoint file
-        swa_model: Optional SWA model to load state into
-    
+        optimizer: Optional optimizer to load state into
+        scheduler: Optional scheduler to load state into
+        device: Optional device to load model to
+        
     Returns:
-        Tuple of (start_epoch, best_accuracy)
+        Dictionary containing all checkpoint data
+        
+    Raises:
+        FileNotFoundError: If checkpoint file doesn't exist
     """
-    filepath = os.path.join(checkpoint_dir, filename)
-    if not os.path.isfile(filepath):
-        logger.warning(f"No checkpoint found at {filepath}")
-        return 0, 0.0
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
+        
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # Load model state
+        model.load_state_dict(checkpoint['model_state_dict'])
+        if device is not None:
+            model = model.to(device)
+        
+        # Load optimizer state if provided
+        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+        # Load scheduler state if provided
+        if scheduler is not None and 'scheduler_state_dict' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+        logger.info(f"Loaded checkpoint from {checkpoint_path}")
+        logger.info(f"Checkpoint epoch: {checkpoint.get('epoch', 'unknown')}")
+        
+        return checkpoint
+        
+    except Exception as e:
+        logger.error(f"Failed to load checkpoint: {e}")
+        raise
 
-    logger.info(f"Loading checkpoint from {filepath}")
-    checkpoint = torch.load(filepath)
-    
-    start_epoch = checkpoint.get('epoch', 0)
-    best_acc = checkpoint.get('best_acc', 0.0)
-    
-    # Load model state
-    if 'state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['state_dict'])
-    
-    # Load optimizer state
-    if 'optimizer' in checkpoint and optimizer is not None:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-    
-    # Load SWA state if available
-    if swa_model is not None and 'swa_state_dict' in checkpoint:
-        swa_model.load_state_dict(checkpoint['swa_state_dict'])
-        logger.info("Loaded SWA model state")
-    
-    logger.info(f"Loaded checkpoint from epoch {start_epoch} with best accuracy {best_acc:.2f}%")
-    return start_epoch, best_acc
-
-def cleanup_checkpoints(checkpoint_dir: str = "checkpoints") -> None:
-    """
-    Clean up checkpoint directory, keeping only the best model and latest checkpoint.
+def get_latest_checkpoint(checkpoint_dir: Union[str, Path]) -> Optional[Path]:
+    """Get the path to the latest checkpoint in directory.
     
     Args:
         checkpoint_dir: Directory containing checkpoints
+        
+    Returns:
+        Path to latest checkpoint or None if no checkpoints found
     """
-    if not os.path.exists(checkpoint_dir):
+    checkpoint_dir = Path(checkpoint_dir)
+    if not checkpoint_dir.exists():
+        return None
+        
+    checkpoints = list(checkpoint_dir.glob("*.pt"))
+    if not checkpoints:
+        return None
+        
+    # Sort by modification time, newest first
+    return max(checkpoints, key=lambda p: p.stat().st_mtime)
+
+def cleanup_old_checkpoints(
+    checkpoint_dir: Union[str, Path],
+    keep_last_n: int = 5,
+    keep_best: bool = True
+) -> None:
+    """Clean up old checkpoints, keeping only the N most recent ones.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoints
+        keep_last_n: Number of recent checkpoints to keep
+        keep_best: Whether to always keep best.pt
+    """
+    checkpoint_dir = Path(checkpoint_dir)
+    if not checkpoint_dir.exists():
         return
         
-    keep_files = {'checkpoint.pth.tar', 'model_best.pth.tar'}
-    for file in os.listdir(checkpoint_dir):
-        if file not in keep_files:
-            os.remove(os.path.join(checkpoint_dir, file))
-            logger.info(f"Removed old checkpoint: {file}")
+    # Get all checkpoints except best.pt
+    checkpoints = [
+        p for p in checkpoint_dir.glob("*.pt")
+        if p.name != "best.pt"
+    ]
+    
+    # Sort by modification time, oldest first
+    checkpoints.sort(key=lambda p: p.stat().st_mtime)
+    
+    # Remove old checkpoints
+    for checkpoint in checkpoints[:-keep_last_n]:
+        checkpoint.unlink()
+        logger.info(f"Removed old checkpoint: {checkpoint}")
