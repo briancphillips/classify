@@ -400,27 +400,34 @@ def train_model(model, train_loader, test_loader, device):
             display.display(plt.gcf())
             plt.close('all')
         
-        # Step the scheduler
-        scheduler.step()
-        
         # Log with current learning rate
         logger.info(f'Epoch [{epoch+1}/200] LR: {scheduler.get_last_lr()[0]:.6f} Train Loss: {train_loss:.3f} Train Acc: {train_acc:.2f}% Test Loss: {test_loss:.3f} Test Acc: {test_acc:.2f}%')
         
-        # Save checkpoint
+        # Create checkpoint with current metrics
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_acc': best_acc,
+            'train_losses': train_losses,
+            'train_accs': train_accs,
+            'test_losses': test_losses,
+            'test_accs': test_accs
+        }
+        
+        # Always save latest checkpoint with current metrics
+        save_checkpoint(checkpoint, checkpoint_dir, checkpoint_name)
+        
+        # If this is the best model so far, save it as best
         if test_acc > best_acc:
             best_acc = test_acc
-            save_checkpoint({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'best_acc': best_acc,
-                'train_losses': train_losses,
-                'train_accs': train_accs,
-                'test_losses': test_losses,
-                'test_accs': test_accs
-            }, checkpoint_dir, checkpoint_name)
+            checkpoint['is_best'] = True
+            save_checkpoint(checkpoint, checkpoint_dir, checkpoint_name)
 
+        # Step the scheduler
+        scheduler.step()
+        
     # Final plot cleanup
     plt.close('all')
 
