@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 class PoisonAttack:
     """Base class for poison attacks"""
 
-    def __init__(self, config, device: torch.device):
+    def __init__(self, config: "PoisonConfig", device: torch.device):
         self.config = config
         self.device = device
         self.dataset_name = ""  # Initialize with empty string

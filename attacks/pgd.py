@@ -49,149 +49,82 @@ class PGDPoisonAttack(PoisonAttack):
         else:
             original_labels = [dataset[i][1] for i in range(num_samples)]
 
-        # Create a new dataset with the same transforms
+        # Create a copy of the dataset to avoid modifying the original
         poisoned_dataset = copy.deepcopy(dataset)
+        poisoned_indices = []
 
         # Randomly select indices to poison
-        all_indices = list(range(num_samples))
-        random.shuffle(all_indices)
-        poison_indices = all_indices[:num_poison]
+        indices_to_poison = np.random.choice(
+            num_samples, size=num_poison, replace=False
+        )
 
-        # Apply PGD attack to selected samples
-        for idx in tqdm(poison_indices, desc="Applying PGD attack"):
-            # Get the image and label
-            img, label = dataset[idx]
+        # Create dataloader for poisoning
+        dataloader = DataLoader(
+            dataset, batch_size=1, shuffle=False
+        )
 
-            # Convert to tensor if needed
-            if not isinstance(img, torch.Tensor):
-                img = transforms.ToTensor()(img)
+        # Track poisoning success
+        poison_success = 0
+        total_poisoned = 0
 
-            # Add batch dimension and move to device
-            img = img.unsqueeze(0).to(self.device)
-
-            # Create target tensor for the attack
-            target = torch.tensor([label], device=self.device)
-
-            # Perform PGD attack
-            perturbed_img = self.pgd_attack(
-                img,
-                target,
-                epsilon=self.config.pgd_eps,
-                alpha=self.config.pgd_alpha,
-                num_steps=self.config.pgd_steps,
-                num_classes=100,  # CIFAR100 has 100 classes
-            )
-
-            if perturbed_img is None:
-                logger.warning(f"PGD attack failed for sample {idx}, skipping")
+        # Perform PGD attack on selected samples
+        for idx, (data, target) in enumerate(tqdm(dataloader, desc="Poisoning samples")):
+            if idx not in indices_to_poison:
                 continue
 
-            # Remove batch dimension and move back to CPU
-            perturbed_img = perturbed_img.squeeze(0).cpu()
+            data = data.to(self.device)
+            target = target.to(self.device)
 
-            # Update the dataset based on its type
-            if isinstance(poisoned_dataset, datasets.ImageFolder):
-                # For ImageFolder datasets
-                img_path = poisoned_dataset.imgs[idx][0]
-                poisoned_dataset.imgs[idx] = (img_path, label)
-                poisoned_dataset.samples[idx] = (img_path, label)
-                if hasattr(poisoned_dataset, "cache"):
-                    poisoned_dataset.cache[img_path] = transforms.ToPILImage()(
-                        perturbed_img
-                    )
-            elif isinstance(poisoned_dataset, datasets.GTSRB):
-                # For GTSRB dataset
-                if hasattr(poisoned_dataset, "_samples"):
-                    # Get the original sample info
-                    img_path, target = poisoned_dataset._samples[idx]
-                    # Save the perturbed image
-                    perturbed_pil = transforms.ToPILImage()(perturbed_img)
-                    perturbed_pil.save(img_path)
-                    # Update the sample info
-                    poisoned_dataset._samples[idx] = (img_path, target)
-                else:
-                    logger.warning(f"Unexpected GTSRB dataset structure at index {idx}")
-            elif isinstance(poisoned_dataset, datasets.CIFAR100):
-                # For CIFAR100 dataset
-                poisoned_dataset.data[idx] = (
-                    (perturbed_img.permute(1, 2, 0) * 255).numpy().astype(np.uint8)
-                )
-                poisoned_dataset.targets[idx] = label
-            elif isinstance(poisoned_dataset, torch.utils.data.dataset.Subset):
-                # For Subset datasets, modify the underlying dataset
-                base_dataset = poisoned_dataset.dataset
-                base_idx = poisoned_dataset.indices[idx]
+            # Initialize perturbed data
+            perturbed_data = data.clone().detach()
+            
+            # PGD attack loop
+            for step in range(self.config.pgd_steps):
+                perturbed_data.requires_grad = True
+                output = self.model(perturbed_data)
+                loss = F.cross_entropy(output, target)
+                loss.backward()
 
-                if isinstance(base_dataset, datasets.CIFAR100):
-                    base_dataset.data[base_idx] = (
-                        (perturbed_img.permute(1, 2, 0) * 255).numpy().astype(np.uint8)
-                    )
-                    base_dataset.targets[base_idx] = label
-                elif isinstance(base_dataset, datasets.GTSRB):
-                    if hasattr(base_dataset, "_samples"):
-                        img_path, target = base_dataset._samples[base_idx]
-                        perturbed_pil = transforms.ToPILImage()(perturbed_img)
-                        perturbed_pil.save(img_path)
-                        base_dataset._samples[base_idx] = (img_path, target)
-                elif isinstance(base_dataset, datasets.ImageFolder):
-                    img_path = base_dataset.imgs[base_idx][0]
-                    base_dataset.imgs[base_idx] = (img_path, label)
-                    base_dataset.samples[base_idx] = (img_path, label)
-                    if hasattr(base_dataset, "cache"):
-                        base_dataset.cache[img_path] = transforms.ToPILImage()(
-                            perturbed_img
-                        )
+                # Update perturbed data
+                grad = perturbed_data.grad.detach()
+                perturbed_data = perturbed_data + self.config.pgd_alpha * grad.sign()
+                
+                # Project back to epsilon ball
+                delta = torch.clamp(perturbed_data - data, -self.config.pgd_eps, self.config.pgd_eps)
+                perturbed_data = torch.clamp(data + delta, 0, 1).detach()
 
-        # Create result object
-        result = PoisonResult(self.config, dataset_name=self.dataset_name)
-        result.poisoned_indices = poison_indices
+            # Check if poisoning was successful
+            with torch.no_grad():
+                output = self.model(perturbed_data)
+                pred = output.argmax(dim=1)
+                if pred != target:
+                    poison_success += 1
 
-        # Create data loaders for evaluation
-        clean_loader = DataLoader(
-            dataset,
-            batch_size=128,
-            shuffle=False,
-            num_workers=0,  # Use single process
-            pin_memory=True,
-            persistent_workers=False,
+            # Update the dataset with poisoned sample
+            if isinstance(dataset, torch.utils.data.dataset.Subset):
+                poisoned_dataset.dataset.data[dataset.indices[idx]] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+            else:
+                poisoned_dataset.data[idx] = (perturbed_data.cpu().numpy() * 255).astype(np.uint8)
+
+            poisoned_indices.append(idx)
+            total_poisoned += 1
+
+            # Clear GPU memory
+            clear_memory()
+
+        # Calculate success rate
+        poison_success_rate = poison_success / total_poisoned if total_poisoned > 0 else 0.0
+        logger.info(f"Poisoning success rate: {poison_success_rate:.2%}")
+
+        # Create and return PoisonResult
+        result = PoisonResult(
+            config=self.config,
+            dataset_name=self.dataset_name,
+            poisoned_indices=poisoned_indices,
+            poison_success_rate=poison_success_rate,
+            original_accuracy=0.0,  # Will be computed later
+            poisoned_accuracy=0.0,  # Will be computed later
         )
-        poisoned_loader = DataLoader(
-            poisoned_dataset,
-            batch_size=128,
-            shuffle=False,
-            num_workers=0,  # Use single process
-            pin_memory=True,
-            persistent_workers=False,
-        )
-
-        # Evaluate model on clean and poisoned data using original labels
-        result.original_accuracy = self._evaluate_model(clean_loader)
-        result.poisoned_accuracy = self._evaluate_model_with_original_labels(
-            poisoned_loader, original_labels
-        )
-
-        # Calculate attack success rate
-        success_count = 0
-        total_poison = 0
-        self.model.eval()
-        with torch.no_grad():
-            for idx in poison_indices:
-                img, _ = poisoned_dataset[idx]
-                if not isinstance(img, torch.Tensor):
-                    img = transforms.ToTensor()(img)
-                img = img.unsqueeze(0).to(self.device)
-                output = self.model(img)
-                pred = output.argmax(1).item()
-                if pred != original_labels[idx]:  # Compare with original label
-                    success_count += 1
-                total_poison += 1
-
-        result.poison_success_rate = (
-            100.0 * success_count / total_poison if total_poison > 0 else 0.0
-        )
-        logger.info(f"Attack success rate: {result.poison_success_rate:.2f}%")
-        logger.info(f"Original accuracy: {result.original_accuracy:.2f}%")
-        logger.info(f"Poisoned accuracy: {result.poisoned_accuracy:.2f}%")
 
         return poisoned_dataset, result
 
