@@ -274,7 +274,7 @@ def train_model(model, train_loader, test_loader, device):
     test_accs = []
     
     # Set up the plot style
-    plt.style.use('seaborn')
+    plt.style.use('bmh')  # Using a built-in style instead of seaborn
     
     if latest_checkpoint:
         checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)

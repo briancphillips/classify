@@ -70,6 +70,14 @@ class ErrorLogger:
             message: The error message to log
         """
         self.logger.error(message)
+    
+    def error(self, msg: str) -> None:
+        """Log an error message."""
+        self.logger.error(msg)
+    
+    def exception(self, msg: str) -> None:
+        """Log an exception with traceback."""
+        self.logger.exception(msg)
 
 # Global error logger instance
 _error_logger = None
