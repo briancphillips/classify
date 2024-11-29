@@ -12,6 +12,7 @@ import json
 from typing import Dict, Any, List, Tuple
 import matplotlib.pyplot as plt
 from IPython import display
+import sys
 
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
@@ -236,6 +237,18 @@ def evaluate_model(model, data_loader, device):
     accuracy = 100. * correct / total
     return accuracy
 
+def is_jupyter() -> bool:
+    """Check if the code is running in a Jupyter notebook."""
+    try:
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':  # Jupyter notebook or qtconsole
+            return True
+        elif shell == 'TerminalInteractiveShell':  # IPython terminal
+            return False
+    except NameError:  # Probably standard Python interpreter
+        return False
+    return False
+
 def train_model(model, train_loader, test_loader, device):
     """Train model on given data loader."""
     model.train()
@@ -273,8 +286,11 @@ def train_model(model, train_loader, test_loader, device):
     test_losses = []
     test_accs = []
     
-    # Set up the plot style
-    plt.style.use('bmh')  # Using a built-in style instead of seaborn
+    # Only set up plotting if in Jupyter
+    in_jupyter = is_jupyter()
+    if in_jupyter:
+        # Set up the plot style
+        plt.style.use('bmh')  # Using a built-in style instead of seaborn
     
     if latest_checkpoint:
         checkpoint = load_checkpoint(latest_checkpoint, model, optimizer, device)
@@ -337,33 +353,36 @@ def train_model(model, train_loader, test_loader, device):
         test_losses.append(test_loss)
         test_accs.append(test_acc)
         
-        # Create new figure for this update
-        plt.figure(figsize=(15, 5))
-        
-        # Plot losses
-        plt.subplot(1, 2, 1)
-        plt.plot(train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
-        plt.plot(test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Training and Test Loss')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        
-        # Plot accuracies
-        plt.subplot(1, 2, 2)
-        plt.plot(train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
-        plt.plot(test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy (%)')
-        plt.title('Training and Test Accuracy')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        
-        # Update display
-        display.clear_output(wait=True)
-        plt.tight_layout()
-        display.display(plt.gcf())
+        # Only plot if in Jupyter
+        if in_jupyter:
+            # Create new figure for this update
+            plt.figure(figsize=(15, 5))
+            
+            # Plot losses
+            plt.subplot(1, 2, 1)
+            plt.plot(train_losses, label='Train Loss', color='#2ecc71', linewidth=2)
+            plt.plot(test_losses, label='Test Loss', color='#e74c3c', linewidth=2)
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title('Training and Test Loss')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            
+            # Plot accuracies
+            plt.subplot(1, 2, 2)
+            plt.plot(train_accs, label='Train Acc', color='#2ecc71', linewidth=2)
+            plt.plot(test_accs, label='Test Acc', color='#e74c3c', linewidth=2)
+            plt.xlabel('Epoch')
+            plt.ylabel('Accuracy (%)')
+            plt.title('Training and Test Accuracy')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            
+            # Update display
+            display.clear_output(wait=True)
+            plt.tight_layout()
+            display.display(plt.gcf())
+            plt.close('all')
         
         # Step the scheduler
         scheduler.step()
