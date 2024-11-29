@@ -237,26 +237,66 @@ class LabelFlipAttack(PoisonAttack):
 
         with torch.no_grad():
             for inputs, targets in dataloader:
-                # Handle tensor conversion
+                # Handle tensor conversion and dimensions
                 if not isinstance(inputs, torch.Tensor):
                     inputs = transforms.ToTensor()(inputs)
-
-                # Ensure proper dimensions (B, C, H, W)
-                if len(inputs.shape) == 3:
-                    inputs = inputs.unsqueeze(0)
-                elif len(inputs.shape) != 4:
-                    raise ValueError(f"Expected 3D or 4D input, got shape {inputs.shape}")
-
+                
+                # Ensure proper dimensions [B, C, H, W]
+                if len(inputs.shape) == 3:  # [C, H, W]
+                    inputs = inputs.unsqueeze(0)  # Add batch dimension
+                elif len(inputs.shape) == 5:  # [1, 1, C, H, W]
+                    inputs = inputs.squeeze(1)  # Remove extra dimension
+                
                 # Move to device and normalize if needed
-                inputs = move_to_device(inputs, self.device)
+                inputs = inputs.to(self.device)
                 if inputs.dtype == torch.uint8:
                     inputs = inputs.float() / 255.0
-                targets = move_to_device(targets, self.device)
+                targets = targets.to(self.device)
 
                 # Get predictions
                 outputs = self.model(inputs)
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
+
+        return 100.0 * correct / total
+
+    def _evaluate_model_with_original_labels(
+        self, dataloader: DataLoader, original_labels: List[int]
+    ) -> float:
+        """Evaluate model accuracy using original labels"""
+        self.model.eval()
+        correct = 0
+        total = 0
+        idx = 0
+
+        with torch.no_grad():
+            for inputs, _ in dataloader:
+                # Handle tensor conversion and dimensions
+                if not isinstance(inputs, torch.Tensor):
+                    inputs = transforms.ToTensor()(inputs)
+                
+                # Ensure proper dimensions [B, C, H, W]
+                if len(inputs.shape) == 3:  # [C, H, W]
+                    inputs = inputs.unsqueeze(0)  # Add batch dimension
+                elif len(inputs.shape) == 5:  # [1, 1, C, H, W]
+                    inputs = inputs.squeeze(1)  # Remove extra dimension
+                
+                # Move to device and normalize if needed
+                inputs = inputs.to(self.device)
+                if inputs.dtype == torch.uint8:
+                    inputs = inputs.float() / 255.0
+
+                # Get batch size number of original labels
+                batch_size = inputs.size(0)
+                batch_labels = original_labels[idx:idx + batch_size]
+                batch_labels = torch.tensor(batch_labels, device=self.device)
+
+                # Get predictions
+                outputs = self.model(inputs)
+                _, predicted = outputs.max(1)
+                total += batch_size
+                correct += predicted.eq(batch_labels).sum().item()
+                idx += batch_size
 
         return 100.0 * correct / total
