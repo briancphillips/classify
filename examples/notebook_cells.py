@@ -1,6 +1,15 @@
 # Cell 1: Basic Configuration
 from config.experiment_config import create_config
 
+# Setup hardware configuration
+import torch
+num_workers = 4  # Adjust based on your CPU cores
+hardware_config = {
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'num_workers': num_workers,
+    'pin_memory': True if torch.cuda.is_available() else False
+}
+
 # Create a simple configuration for CIFAR-100
 config = create_config('cifar100')
 
