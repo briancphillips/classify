@@ -177,7 +177,7 @@ class ExperimentManager:
                             'dataset': dataset,
                             'attack': attack,
                             'output_dir': str(self.results_dir),
-                            'poison_ratio': experiment.get('poison_ratio', 0.1)  # Get poison_ratio from experiment config
+                            'poison_ratio': experiment.get('poison_config', {}).get('poison_ratio', 0.1)  # Get from poison_config
                         }
                         
                         # Add optional parameters if present
@@ -187,6 +187,11 @@ class ExperimentManager:
                             params['target_class'] = experiment['target_class']
                         if 'source_class' in experiment:
                             params['source_class'] = experiment['source_class']
+                        
+                        # Add poison config parameters
+                        if 'poison_config' in experiment:
+                            if 'batch_size' in experiment['poison_config']:
+                                params['batch_size'] = experiment['poison_config']['batch_size']
                         
                         # Run the experiment
                         results = run_poison_experiment(**params)
