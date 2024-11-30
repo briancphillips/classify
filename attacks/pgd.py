@@ -49,7 +49,7 @@ class PGDPoisonAttack(PoisonAttack):
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        total_steps = self.config.pgd_steps
+        total_steps = self.config.pgd_steps * self.config.pgd_iterations
         pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
         # Process samples in batches
@@ -85,22 +85,24 @@ class PGDPoisonAttack(PoisonAttack):
             # Initialize perturbed data
             perturbed_data = batch_data.clone().detach()
             
-            # PGD attack loop for the entire batch
-            for step in range(self.config.pgd_steps):
-                perturbed_data.requires_grad = True
-                output = self.model(perturbed_data)
-                loss = F.cross_entropy(output, batch_targets)
-                loss.backward()
-                
-                # Update perturbed data
-                grad = perturbed_data.grad.detach()
-                perturbed_data = perturbed_data + self.config.pgd_alpha * grad.sign()
-                
-                # Project back to epsilon ball
-                delta = torch.clamp(perturbed_data - batch_data, -self.config.pgd_eps, self.config.pgd_eps)
-                perturbed_data = torch.clamp(batch_data + delta, 0, 1).detach()
-                
-                pbar.update(1)
+            # PGD attack iterations for the batch
+            for iteration in range(self.config.pgd_iterations):
+                # Inner PGD steps
+                for step in range(self.config.pgd_steps):
+                    perturbed_data.requires_grad = True
+                    output = self.model(perturbed_data)
+                    loss = F.cross_entropy(output, batch_targets)
+                    loss.backward()
+                    
+                    # Update perturbed data
+                    grad = perturbed_data.grad.detach()
+                    perturbed_data = perturbed_data + self.config.pgd_alpha * grad.sign()
+                    
+                    # Project back to epsilon ball
+                    delta = torch.clamp(perturbed_data - batch_data, -self.config.pgd_eps, self.config.pgd_eps)
+                    perturbed_data = torch.clamp(batch_data + delta, 0, 1).detach()
+                    
+                    pbar.update(1)
 
             # Check poisoning success for each sample in batch
             with torch.no_grad():

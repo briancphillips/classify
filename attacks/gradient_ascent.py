@@ -109,23 +109,25 @@ class GradientAscentAttack(PoisonAttack):
             # Initialize perturbed data
             perturbed_data = batch_data.clone().detach()
             
-            # Single optimization loop for the entire batch
-            for _ in range(total_steps):
-                perturbed_data.requires_grad = True
-                output = self.model(perturbed_data)
-                original_preds = self.model(batch_data).argmax(dim=1)
-                loss = F.cross_entropy(output, original_preds)
-                loss.backward()
-                
-                # Update perturbed data
-                grad = perturbed_data.grad.detach()
-                perturbed_data = torch.clamp(
-                    perturbed_data + self.config.ga_lr * grad.sign(), 
-                    0, 
-                    1
-                ).detach()
-                
-                pbar.update(1)
+            # Gradient ascent iterations for the batch
+            for iteration in range(self.config.ga_iterations):
+                # Inner optimization steps
+                for step in range(self.config.ga_steps):
+                    perturbed_data.requires_grad = True
+                    output = self.model(perturbed_data)
+                    original_preds = self.model(batch_data).argmax(dim=1)
+                    loss = F.cross_entropy(output, original_preds)
+                    loss.backward()
+                    
+                    # Update perturbed data
+                    grad = perturbed_data.grad.detach()
+                    perturbed_data = torch.clamp(
+                        perturbed_data + self.config.ga_lr * grad.sign(), 
+                        0, 
+                        1
+                    ).detach()
+                    
+                    pbar.update(1)
 
             # Check poisoning success for each sample in batch
             with torch.no_grad():
