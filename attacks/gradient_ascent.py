@@ -47,7 +47,7 @@ class GradientAscentAttack(PoisonAttack):
         """Poison a dataset using gradient ascent."""
         logger.info(
             f"Starting Gradient Ascent poisoning with ratio={self.config.poison_ratio}, "
-            f"steps={self.config.ga_steps}, iterations={self.config.ga_iterations}, "
+            f"steps={self.config.ga_steps * self.config.ga_iterations}, "
             f"learning_rate={self.config.ga_lr}"
         )
 
@@ -73,10 +73,11 @@ class GradientAscentAttack(PoisonAttack):
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        pbar = tqdm(indices_to_poison, desc="Poisoning samples", total=num_poison)
+        total_steps = num_poison * self.config.ga_steps * self.config.ga_iterations
+        pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
         # Perform gradient ascent attack on selected samples
-        for idx in pbar:
+        for idx in indices_to_poison:
             # Get sample from dataset
             data, target = dataset[idx]
             
@@ -91,7 +92,7 @@ class GradientAscentAttack(PoisonAttack):
                 data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
             
             data = data.to(self.device)
-            target = torch.tensor(target, device=self.device)  # Convert target to tensor and move to device
+            target = torch.tensor(target, device=self.device)
 
             # Normalize to [0,1] range if needed
             if data.dtype == torch.uint8:
@@ -100,22 +101,25 @@ class GradientAscentAttack(PoisonAttack):
             # Initialize perturbed data
             perturbed_data = data.clone().detach()
             
-            # Gradient ascent attack loop
-            for iteration in range(self.config.ga_iterations):
-                # Inner optimization loop
-                for step in range(self.config.ga_steps):
-                    # Ensure proper dimensions before gradient computation
-                    if len(perturbed_data.shape) != 4:
-                        logger.error(f"Unexpected perturbed data shape: {perturbed_data.shape}")
-                        raise ValueError(f"Expected 4D tensor, got shape {perturbed_data.shape}")
-                    
-                    grad = self._compute_gradient(perturbed_data, data)
-                    perturbed_data = self._step(perturbed_data, grad, self.config.ga_lr)
-
-                # Validate and project perturbed data
-                if not self.validate_image(perturbed_data):
-                    logger.warning(f"Invalid perturbed image at index {idx}, iteration {iteration}")
-                    continue
+            # Total number of steps (combining both loops)
+            total_optimization_steps = self.config.ga_steps * self.config.ga_iterations
+            
+            # Single optimization loop
+            for _ in range(total_optimization_steps):
+                perturbed_data.requires_grad = True
+                output = self.model(perturbed_data)
+                loss = F.cross_entropy(output, self.model(data).argmax(dim=1))
+                loss.backward()
+                
+                # Update perturbed data
+                grad = perturbed_data.grad.detach()
+                perturbed_data = torch.clamp(
+                    perturbed_data + self.config.ga_lr * grad.sign(), 
+                    0, 
+                    1
+                ).detach()
+                
+                pbar.update(1)
 
             # Check if poisoning was successful
             with torch.no_grad():
@@ -125,9 +129,9 @@ class GradientAscentAttack(PoisonAttack):
                     poison_success += 1
 
             # Convert back to uint8 and correct format
-            perturbed_data = (perturbed_data * 255).byte()  # Shape: [1, C, H, W]
-            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension -> [C, H, W]
-            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert to HWC format -> [H, W, C]
+            perturbed_data = (perturbed_data * 255).byte()
+            perturbed_data = perturbed_data.squeeze(0)
+            perturbed_data = perturbed_data.permute(1, 2, 0)
 
             # Update the dataset with poisoned sample
             if isinstance(dataset, torch.utils.data.dataset.Subset):
@@ -138,8 +142,8 @@ class GradientAscentAttack(PoisonAttack):
             poisoned_indices.append(idx)
             total_poisoned += 1
 
-            # Clear GPU memory
-            clear_memory()
+        # Clear GPU memory once after all samples
+        clear_memory()
 
         # Calculate success rate
         poison_success_rate = poison_success / total_poisoned if total_poisoned > 0 else 0.0
