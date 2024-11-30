@@ -492,4 +492,7 @@ class PoisonExperiment:
                 return
             except Exception as e:
                 logger.warning(f"Failed to load local checkpoint: {e}")
-                logger.info("Will train model from scratch"){{ ... }}
+                logger.info("Will train model from scratch")
+
+        # If no checkpoint was loaded, continue with original training code
+        start_time = time.time()
