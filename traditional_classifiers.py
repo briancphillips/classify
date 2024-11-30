@@ -78,12 +78,13 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=None):
     X_test = scaler.transform(X_test)
     
     # Apply PCA for dimensionality reduction
-    n_components = min(X_train.shape[1], 512)  # Cap at 512 components
+    n_components = min(X_train.shape[0], X_train.shape[1], 512)  # Cap at min(n_samples, n_features, 512)
+    logger.info(f"Applying PCA: n_samples={X_train.shape[0]}, n_features={X_train.shape[1]}, n_components={n_components}")
     pca = PCA(n_components=n_components, random_state=42)
     X_train = pca.fit_transform(X_train)
     X_test = pca.transform(X_test)
     
-    logger.info(f"Reduced feature dimension from {X_train.shape[1]} to {n_components} components")
+    logger.info(f"Reduced feature dimension to {n_components} components")
     logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_.sum():.4f}")
 
     # Initialize classifiers with optimized hyperparameters
@@ -197,12 +198,13 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
     X_test = scaler.transform(X_test)
 
     # Apply PCA for dimensionality reduction
-    n_components = min(X_train.shape[1], 512)  # Cap at 512 components
+    n_components = min(X_train.shape[0], X_train.shape[1], 512)  # Cap at min(n_samples, n_features, 512)
+    logger.info(f"Applying PCA: n_samples={X_train.shape[0]}, n_features={X_train.shape[1]}, n_components={n_components}")
     pca = PCA(n_components=n_components, random_state=42)
     X_train = pca.fit_transform(X_train)
     X_test = pca.transform(X_test)
     
-    logger.info(f"Reduced feature dimension from {X_train.shape[1]} to {n_components} components")
+    logger.info(f"Reduced feature dimension to {n_components} components")
     logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_.sum():.4f}")
 
     # Initialize classifiers with optimized hyperparameters
