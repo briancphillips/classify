@@ -469,7 +469,10 @@ class PoisonExperiment:
             config=poison_config,
             device=self.device
         )
-        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
+        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset(
+            dataset=self.train_dataset,
+            model=self.model
+        )
 
     def _apply_pgd_attack(self, poison_config: PoisonConfig):
         pass
