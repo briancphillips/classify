@@ -184,9 +184,11 @@ class ExperimentManager:
                     try:
                         from poison import run_poison_experiment
                         from config.defaults import get_poison_config
+                        from config.dataclasses import PoisonConfig
+                        from config.types import PoisonType
                         
                         # Start with base parameters
-                        params = {
+                        base_params = {
                             'dataset': dataset,
                             'attack': attack,
                             'output_dir': str(self.results_dir)
@@ -194,19 +196,34 @@ class ExperimentManager:
                         
                         # Get default poison config for this attack type
                         poison_defaults = get_poison_config(attack)
-                        params.update(poison_defaults)
                         
-                        # Override with experiment-specific poison config if present
+                        # Create poison config object
+                        poison_config_dict = poison_defaults.copy()
                         if 'poison_config' in experiment:
-                            params.update(experiment['poison_config'])
+                            poison_config_dict.update(experiment['poison_config'])
+                        
+                        # Create PoisonConfig object
+                        poison_config = PoisonConfig(
+                            poison_type=PoisonType(attack),
+                            **poison_config_dict
+                        )
+                        
+                        # Add supported parameters to base_params
+                        params = {
+                            **base_params,
+                            'poison_ratio': poison_config.poison_ratio,
+                            'batch_size': poison_config.batch_size
+                        }
                         
                         # Add optional parameters if present
                         if 'subset_size' in experiment:
                             params['subset_size'] = experiment['subset_size']
-                        if 'target_class' in experiment:
-                            params['target_class'] = experiment['target_class']
-                        if 'source_class' in experiment:
-                            params['source_class'] = experiment['source_class']
+                        if poison_config.target_class is not None:
+                            params['target_class'] = poison_config.target_class
+                        if poison_config.source_class is not None:
+                            params['source_class'] = poison_config.source_class
+                        if poison_config.random_seed is not None:
+                            params['seed'] = poison_config.random_seed
                         
                         logger.info(f"Running experiment with params: {params}")
                         
