@@ -490,3 +490,56 @@ def save_checkpoint(checkpoint, checkpoint_dir, checkpoint_name):
     if checkpoint.get('is_best', False):
         best_path = os.path.join(checkpoint_dir, f"{checkpoint_name}_best.pt")
         torch.save(checkpoint, best_path)
+
+# Hardware configuration
+hardware_config = {
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'num_gpus': torch.cuda.device_count() if torch.cuda.is_available() else 0
+}
+
+# Common settings
+num_workers = min(os.cpu_count(), 8)
+
+# Define checkpoint paths
+from pathlib import Path
+checkpoints = {
+    'cifar100': Path('/workspace/classify/checkpoints/wideresnet/wideresnet_best.pt'),
+    'gtsrb': Path('/workspace/classify/checkpoints/gtsrb/gtsrb_best.pt'),
+    'imagenette': Path('/workspace/classify/checkpoints/resnet50/resnet50_best.pt')
+}
+
+# CIFAR-100 with WideResNet
+config = {
+    'dataset': 'cifar100',
+    'attack': 'pgd',
+    'poison_ratio': 0.1,
+    'batch_size': 128,
+    'target_class': 0,
+    'source_class': 1,
+    'random_seed': 42,
+    'checkpoint_path': checkpoints['cifar100']
+}
+
+# GTSRB with ResNet-50
+config = {
+    'dataset': 'gtsrb',
+    'attack': 'pgd',
+    'poison_ratio': 0.1,
+    'batch_size': 128,
+    'target_class': 0,
+    'source_class': 1,
+    'random_seed': 42,
+    'checkpoint_path': checkpoints['gtsrb']
+}
+
+# Imagenette with ResNet-50
+config = {
+    'dataset': 'imagenette',
+    'attack': 'pgd',
+    'poison_ratio': 0.1,
+    'batch_size': 128,
+    'target_class': 0,
+    'source_class': 1,
+    'random_seed': 42,
+    'checkpoint_path': checkpoints['imagenette']
+}
