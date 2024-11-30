@@ -134,6 +134,9 @@ class ExperimentManager:
             poison_ratio = poison_config.get("poison_ratio", 0.1)
             batch_size = poison_config.get("batch_size", 32)
             
+            logger.info(f"Experiment poison config: {poison_config}")
+            logger.info(f"Using poison_ratio={poison_ratio}, batch_size={batch_size}")
+            
             results = run_poison_experiment(
                 dataset=experiment["dataset"],
                 attack=attack,

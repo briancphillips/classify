@@ -50,6 +50,8 @@ class GradientAscentAttack(PoisonAttack):
             f"steps={self.config.ga_steps * self.config.ga_iterations}, "
             f"learning_rate={self.config.ga_lr}"
         )
+        
+        logger.info(f"Attack configuration: {self.config}")
 
         # Move model to device and set to eval mode
         self.model = model.to(self.device)
@@ -61,6 +63,7 @@ class GradientAscentAttack(PoisonAttack):
         # Calculate number of samples to poison
         num_samples = len(dataset)
         num_poison = int(num_samples * self.config.poison_ratio)
+        logger.info(f"Dataset size={num_samples}, poison_ratio={self.config.poison_ratio}")
         logger.info(f"Poisoning {num_poison} out of {num_samples} samples")
         
         # Randomly select indices to poison

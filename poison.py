@@ -128,8 +128,10 @@ def run_poison_experiment(
             pgd_steps=40,
             target_class=target_class,
             source_class=source_class,
-            random_seed=seed
+            random_seed=seed,
+            batch_size=batch_size
         )
+        logger.info(f"Created PGD attack config with poison_ratio={poison_ratio}, batch_size={batch_size}")
     elif attack.lower() == "gradient_ascent":
         poison_type = PoisonType.GRADIENT_ASCENT
         config = PoisonConfig(
@@ -140,8 +142,10 @@ def run_poison_experiment(
             ga_lr=0.1,
             target_class=target_class,
             source_class=source_class,
-            random_seed=seed
+            random_seed=seed,
+            batch_size=batch_size
         )
+        logger.info(f"Created Gradient Ascent attack config with poison_ratio={poison_ratio}, batch_size={batch_size}")
     else:  # Label flip attacks
         if target_class is not None and source_class is not None:
             poison_type = PoisonType.LABEL_FLIP_SOURCE_TO_TARGET
@@ -155,7 +159,8 @@ def run_poison_experiment(
             poison_ratio=poison_ratio,
             target_class=target_class,
             source_class=source_class,
-            random_seed=seed
+            random_seed=seed,
+            batch_size=batch_size
         )
     
     try:
