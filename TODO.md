@@ -54,3 +54,10 @@
       }
   }
   ```
+
+## Performance Optimizations
+
+### Gradient Ascent Attack
+- [ ] Evaluate and potentially reduce `ga_iterations` (currently 100) as it may be more than necessary
+- [ ] Consider adding early stopping if attack succeeds before max iterations
+- [ ] Experiment with different batch sizes (currently 32) to find optimal GPU utilization

@@ -49,80 +49,88 @@ class PGDPoisonAttack(PoisonAttack):
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        pbar = tqdm(indices_to_poison, desc="Poisoning samples", total=num_poison)
+        total_steps = self.config.pgd_steps
+        pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
-        # Perform PGD attack on selected samples
-        for idx in pbar:
-            # Get sample from dataset
-            data, target = dataset[idx]
-
-            # Move data to device and ensure proper dimensions
-            if not isinstance(data, torch.Tensor):
-                data = transforms.ToTensor()(data)
+        # Process samples in batches
+        batch_size = 32  # Can be adjusted based on GPU memory
+        for batch_start in range(0, len(indices_to_poison), batch_size):
+            batch_indices = indices_to_poison[batch_start:batch_start + batch_size]
+            batch_data = []
+            batch_targets = []
             
-            # Ensure we have a 4D tensor [B, C, H, W]
-            if len(data.shape) == 3:  # [C, H, W]
-                data = data.unsqueeze(0)  # Add batch dimension -> [1, C, H, W]
-            elif len(data.shape) == 5:  # [1, 1, C, H, W]
-                data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
+            # Collect batch data
+            for idx in batch_indices:
+                data, target = dataset[idx]
+                if not isinstance(data, torch.Tensor):
+                    data = transforms.ToTensor()(data)
+                
+                # Ensure we have a 4D tensor [B, C, H, W]
+                if len(data.shape) == 3:  # [C, H, W]
+                    data = data.unsqueeze(0)  # Add batch dimension -> [1, C, H, W]
+                elif len(data.shape) == 5:  # [1, 1, C, H, W]
+                    data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
+                
+                # Normalize to [0,1] range if needed
+                if data.dtype == torch.uint8:
+                    data = data.float() / 255.0
+                
+                batch_data.append(data)
+                batch_targets.append(target)
             
-            data = data.to(self.device)
-            target = torch.tensor([target]).to(self.device)
-
-            # Normalize to [0,1] range if needed
-            if data.dtype == torch.uint8:
-                data = data.float() / 255.0
-
+            # Stack batch data
+            batch_data = torch.cat(batch_data, dim=0).to(self.device)
+            batch_targets = torch.tensor(batch_targets, device=self.device)
+            
             # Initialize perturbed data
-            perturbed_data = data.clone().detach()
-
-            # PGD attack loop
+            perturbed_data = batch_data.clone().detach()
+            
+            # PGD attack loop for the entire batch
             for step in range(self.config.pgd_steps):
                 perturbed_data.requires_grad = True
-                
-                # Ensure proper dimensions before model forward pass
-                if len(perturbed_data.shape) != 4:
-                    logger.error(f"Unexpected perturbed data shape: {perturbed_data.shape}")
-                    raise ValueError(f"Expected 4D tensor, got shape {perturbed_data.shape}")
-                
                 output = self.model(perturbed_data)
-                loss = F.cross_entropy(output, target)
+                loss = F.cross_entropy(output, batch_targets)
                 loss.backward()
-
+                
                 # Update perturbed data
                 grad = perturbed_data.grad.detach()
                 perturbed_data = perturbed_data + self.config.pgd_alpha * grad.sign()
-
+                
                 # Project back to epsilon ball
-                delta = torch.clamp(perturbed_data - data, -self.config.pgd_eps, self.config.pgd_eps)
-                perturbed_data = torch.clamp(data + delta, 0, 1).detach()
+                delta = torch.clamp(perturbed_data - batch_data, -self.config.pgd_eps, self.config.pgd_eps)
+                perturbed_data = torch.clamp(batch_data + delta, 0, 1).detach()
+                
+                pbar.update(1)
 
-            # Check if poisoning was successful
+            # Check poisoning success for each sample in batch
             with torch.no_grad():
                 output = self.model(perturbed_data)
-                pred = output.argmax(dim=1)
-                if pred != target:
-                    poison_success += 1
+                preds = output.argmax(dim=1)
+                poison_success += (preds != batch_targets).sum().item()
 
-            # Convert back to uint8 and correct format
-            perturbed_data = (perturbed_data * 255).byte()  # Shape: [1, C, H, W]
-            perturbed_data = perturbed_data.squeeze(0)  # Remove batch dimension -> [C, H, W]
-            perturbed_data = perturbed_data.permute(1, 2, 0)  # Convert to HWC format -> [H, W, C]
-
-            # Update the dataset with poisoned sample
-            if isinstance(dataset, torch.utils.data.dataset.Subset):
-                poisoned_dataset.dataset.data[dataset.indices[idx]] = perturbed_data.cpu().numpy()
-            else:
-                poisoned_dataset.data[idx] = perturbed_data.cpu().numpy()
-
-            poisoned_indices.append(idx)
-            total_poisoned += 1
+            # Convert back to uint8 and correct format for each sample
+            perturbed_data = (perturbed_data * 255).byte()  # [B, C, H, W]
+            
+            # Update dataset with poisoned samples
+            for i, idx in enumerate(batch_indices):
+                # Get individual sample and reshape
+                sample = perturbed_data[i].squeeze(0)  # [C, H, W]
+                sample = sample.permute(1, 2, 0)  # [H, W, C]
+                
+                if isinstance(dataset, torch.utils.data.dataset.Subset):
+                    poisoned_dataset.dataset.data[dataset.indices[idx]] = sample.cpu().numpy()
+                else:
+                    poisoned_dataset.data[idx] = sample.cpu().numpy()
+                
+                poisoned_indices.append(idx)
+                total_poisoned += 1
 
             # Update progress bar description
-            pbar.set_description(f"Poisoning samples (success rate: {100.0 * poison_success / total_poisoned:.1f}%)")
+            success_rate = 100.0 * poison_success / total_poisoned if total_poisoned > 0 else 0.0
+            pbar.set_description(f"Poisoning samples (success rate: {success_rate:.1f}%)")
 
-            # Clear GPU memory
-            clear_memory()
+        # Clear GPU memory once after all batches
+        clear_memory()
 
         # Calculate success rate
         poison_success_rate = poison_success / total_poisoned if total_poisoned > 0 else 0.0
