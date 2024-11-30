@@ -11,6 +11,7 @@ from torch.amp import autocast, GradScaler
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.optim.swa_utils import AveragedModel, SWALR
 from config.dataclasses import PoisonConfig, PoisonResult, ExperimentConfig
+from config.types import PoisonType
 from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
