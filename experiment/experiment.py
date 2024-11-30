@@ -675,7 +675,9 @@ class PoisonExperiment:
         traditional_results = evaluate_traditional_classifiers_on_poisoned(
             self.train_dataset,
             self.test_dataset,
-            self.dataset_name
+            self.dataset_name,
+            poison_config=None,
+            subset_size=self.configs[0].data.subset_size if self.configs and hasattr(self.configs[0].data, 'subset_size') else None
         )
         results = traditional_results
 

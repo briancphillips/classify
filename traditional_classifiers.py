@@ -174,11 +174,18 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=None):
     return all_results
 
 
-def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, dataset_name, poison_config=None):
+def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, dataset_name, poison_config=None, subset_size=None):
     """Evaluate traditional classifiers on clean or poisoned data."""
     # Initialize model and move to appropriate device
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     model = get_model(dataset_name).to(device)
+    
+    # If subset_size is specified, take a subset of the data
+    if subset_size is not None:
+        if len(train_dataset) > subset_size:
+            indices = torch.randperm(len(train_dataset))[:subset_size]
+            train_dataset = torch.utils.data.Subset(train_dataset, indices)
+            logger.info(f"Using subset of {subset_size} training samples")
     
     # Extract CNN features and labels
     X_train, y_train = extract_features_and_labels(train_dataset, model, device)
@@ -189,12 +196,35 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    # Initialize classifiers
+    # Apply PCA for dimensionality reduction
+    n_components = min(X_train.shape[1], 512)  # Cap at 512 components
+    pca = PCA(n_components=n_components, random_state=42)
+    X_train = pca.fit_transform(X_train)
+    X_test = pca.transform(X_test)
+    
+    logger.info(f"Reduced feature dimension from {X_train.shape[1]} to {n_components} components")
+    logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_.sum():.4f}")
+
+    # Initialize classifiers with optimized hyperparameters
     classifiers = {
-        "KNN": KNeighborsClassifier(n_neighbors=5),
-        "LR": LogisticRegression(max_iter=1000),
-        "RF": RandomForestClassifier(n_estimators=100),
-        "SVM": SVC(kernel="rbf", probability=True),
+        "KNN": KNeighborsClassifier(
+            n_neighbors=min(30, len(y_train) // 50),  # Adjusted scaling
+            weights='distance',
+            metric='cosine',  # Changed to cosine similarity
+            n_jobs=-1
+        ),
+        "LR": LogisticRegression(
+            max_iter=1000,
+            n_jobs=-1
+        ),
+        "RF": RandomForestClassifier(
+            n_estimators=100,
+            n_jobs=-1
+        ),
+        "SVM": SVC(
+            kernel="rbf",
+            probability=True
+        )
     }
 
     # Get number of classes for the dataset
