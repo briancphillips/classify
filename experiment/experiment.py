@@ -6,10 +6,8 @@ import os
 from typing import List, Optional, Any
 from tqdm import tqdm
 import numpy as np
-import time
-from torch.optim import SGD, Adam
-from torch.optim.lr_scheduler import MultiStepLR
 from torch.cuda.amp import autocast, GradScaler
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.optim.swa_utils import AveragedModel, SWALR
 from config.dataclasses import PoisonConfig, PoisonResult
 from attacks import create_poison_attack
@@ -17,7 +15,7 @@ from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
 from utils.logging import get_logger
 from utils.error_logging import get_error_logger
-from utils.checkpoints import save_checkpoint, load_checkpoint  # Added import
+from utils.checkpoints import save_checkpoint, load_checkpoint
 from .evaluation import evaluate_model, evaluate_attack
 from .visualization import plot_results, plot_attack_comparison
 from traditional_classifiers import evaluate_traditional_classifiers_on_poisoned
