@@ -45,10 +45,6 @@ def main():
             'max_workers': 1,  # Run sequentially
             'device': 'gpu'
         },
-        'poison_overrides': {
-            'batch_size': 32,  # Poisoning attack batch size (smaller for more frequent updates)
-            'poison_ratio': 0.005  # Small poison ratio for debugging
-        },
         'experiment_groups': {
             'basic_comparison': {
                 'description': 'Basic comparison of attacks across different datasets',
@@ -56,17 +52,29 @@ def main():
                     'name': 'cifar100_debug',
                     'dataset': 'cifar100',
                     'attacks': ['ga','label_flip'],
-                    'poison_ratio': 0.005  # 0.5% poison ratio
+                    'subset_size': 100,  # Debug with small subset
+                    'poison_config': {
+                        'batch_size': 32,  # Poisoning batch size
+                        'poison_ratio': 0.005  # Small poison ratio for debugging
+                    }
                 },{
                     'name': 'gtsrb_debug',
                     'dataset': 'gtsrb',
                     'attacks': ['pgd','ga','label_flip'],
-                    'poison_ratio': 0.005  # 0.5% poison ratio
+                    'subset_size': 100,  # Debug with small subset
+                    'poison_config': {
+                        'batch_size': 32,  # Poisoning batch size
+                        'poison_ratio': 0.005  # Small poison ratio for debugging
+                    }
                 },{
                     'name': 'imagenette_debug',
                     'dataset': 'imagenette',
                     'attacks': ['pgd','ga','label_flip'],
-                    'poison_ratio': 0.005  # 0.5% poison ratio
+                    'subset_size': 100,  # Debug with small subset
+                    'poison_config': {
+                        'batch_size': 32,  # Poisoning batch size
+                        'poison_ratio': 0.005  # Small poison ratio for debugging
+                    }
                 }]
             }
         }
