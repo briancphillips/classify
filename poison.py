@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 import os
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import matplotlib.pyplot as plt
 from IPython import display
 import sys
@@ -29,18 +29,19 @@ setup_logging()
 logger = get_logger(__name__)
 error_logger = get_error_logger()
 
-def get_loaders(dataset: str) -> Tuple[DataLoader, DataLoader]:
+def get_loaders(dataset: str, subset_size: Optional[int] = None) -> Tuple[DataLoader, DataLoader]:
     """Get train and test data loaders for a dataset.
     
     Args:
         dataset: Name of dataset ('cifar100', 'gtsrb', 'imagenette')
+        subset_size: Optional size of dataset subset to use
         
     Returns:
         Tuple[DataLoader, DataLoader]: Train and test data loaders
     """
     # Get datasets
-    train_dataset = get_dataset(dataset, train=True)
-    test_dataset = get_dataset(dataset, train=False)
+    train_dataset = get_dataset(dataset, train=True, subset_size=subset_size)
+    test_dataset = get_dataset(dataset, train=False, subset_size=subset_size)
     
     # Create data loaders
     train_loader = DataLoader(
@@ -98,7 +99,7 @@ def run_poison_experiment(
     os.makedirs(output_dir, exist_ok=True)
     
     # Get data loaders
-    train_loader, test_loader = get_loaders(dataset)
+    train_loader, test_loader = get_loaders(dataset, subset_size)
     
     # Create model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
