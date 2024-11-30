@@ -496,3 +496,103 @@ class PoisonExperiment:
 
         # If no checkpoint was loaded, continue with original training code
         start_time = time.time()
+
+    def run(self):
+        """Run the poisoning experiment."""
+        logger.info("Starting poisoning experiment")
+        
+        # Train model on clean data first
+        logger.info("Training model on clean data")
+        self._train_model()
+        clean_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Apply poisoning
+        poison_config = self.configs[0].poison if isinstance(self.configs[0], ExperimentConfig) else self.configs[0]
+        logger.info(f"Applying {poison_config.poison_type} poisoning")
+        if poison_config.poison_type == PoisonType.PGD:
+            self._apply_pgd_attack(poison_config)
+        elif poison_config.poison_type == PoisonType.GRADIENT_ASCENT:
+            self._apply_gradient_ascent_attack(poison_config)
+        elif poison_config.poison_type in [PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM, 
+                                         PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
+                                         PoisonType.LABEL_FLIP_SOURCE_TO_TARGET]:
+            self._apply_label_flip_attack(poison_config)
+            
+        # Train model on poisoned data
+        logger.info("Training model on poisoned data")
+        self._train_model()
+        poisoned_accuracy = evaluate_model(
+            self.model,
+            self.test_loader,
+            self.device
+        )
+        
+        # Save results
+        result = PoisonResult(
+            config=self.configs[0],
+            dataset_name=self.dataset_name,
+            poisoned_indices=self.poisoned_indices,
+            poison_success_rate=self.poison_success_rate,
+            original_accuracy=clean_accuracy,
+            poisoned_accuracy=poisoned_accuracy
+        )
+        result.save(self.output_dir)
+        logger.info(f"Experiment complete. Results saved to {self.output_dir}")
+
+        # Now evaluate clean data with traditional classifiers using trained CNN features
+        logger.info("Evaluating traditional classifiers on clean data...")
+        traditional_results = evaluate_traditional_classifiers_on_poisoned(
+            self.train_dataset,
+            self.test_dataset,
+            self.dataset_name,
+            poison_config=None,
+            subset_size=self.configs[0].data.subset_size if self.configs and hasattr(self.configs[0].data, 'subset_size') else None
+        )
+        results = traditional_results
+
+        # Run each poisoning configuration
+        for config in self.configs:
+            logger.info(f"\nRunning experiment with config: {config}")
+            poison_start_time = time.time()
+
+            try:
+                # Create attack instance
+                attack = create_poison_attack(config.poison, self.device)
+                attack.dataset_name = self.dataset_name  # Set dataset name before running attack
+
+                # Run poisoning attack
+                poisoned_dataset, result = attack.poison_dataset(
+                    self.train_dataset, self.model
+                )
+                result.dataset_name = self.dataset_name
+
+                # Evaluate traditional classifiers on poisoned data
+                logger.info("Evaluating traditional classifiers on poisoned data...")
+                traditional_results = evaluate_traditional_classifiers_on_poisoned(
+                    poisoned_dataset,
+                    self.test_dataset,
+                    self.dataset_name,
+                    config
+                )
+                results.extend(traditional_results)
+
+            except Exception as e:
+                error_msg = f"Error during poisoning experiment: {str(e)}"
+                logger.error(error_msg)
+                continue
+
+            finally:
+                # Clear memory
+                if hasattr(torch.cuda, 'empty_cache'):
+                    torch.cuda.empty_cache()
+
+        # Plot results if available
+        if results:
+            plot_results(results, self.output_dir)
+
+        logger.info(f"Total experiment time: {time.time() - time.time():.2f}s")
+        return results
