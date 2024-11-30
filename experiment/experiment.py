@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import os
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union
 from tqdm import tqdm
 import numpy as np
 import time
@@ -281,94 +281,59 @@ class PoisonExperiment:
     def __init__(
             self,
             dataset_name: str,
-            configs: List[ExperimentConfig],
-            config_path: str = "experiments/config.yaml",
-            device: Optional[torch.device] = None,
+            configs: List[Union[ExperimentConfig, PoisonConfig]],
+            device: torch.device,
             output_dir: str = "results",
-            checkpoint_dir: str = "checkpoints"
+            checkpoint_dir: str = "checkpoints",
     ):
         """Initialize experiment."""
         self.dataset_name = dataset_name
         self.configs = configs
-        self.config_path = config_path
-        self.device = device or get_device()
+        self.device = device
         self.output_dir = output_dir
         self.checkpoint_dir = checkpoint_dir
-        self.poisoned_indices = []  # Initialize as empty list
-        self.poison_success_rate = 0.0  # Initialize as 0
         
-        # Load config
-        with open(config_path) as f:
-            full_config = yaml.safe_load(f)
-        
-        # Initialize with default config values
-        self.config = {
-            'batch_size': 128,
-            'epochs': 200,
-            'learning_rate': 0.1,
-            'momentum': 0.9,
-            'weight_decay': 0.0005,
-            'lr_schedule': [60, 120, 160],
-            'lr_factor': 0.2,
-            'num_workers': 4,
-            'pin_memory': True,
-            'random_crop': True,
-            'random_horizontal_flip': True,
-            'normalize': True,
-            'cutout': True
-        }
-        
-        # Update with config file values if they exist
-        if full_config and isinstance(full_config, dict):
-            if 'defaults' in full_config:
-                self.config.update(full_config['defaults'])
-            if 'dataset_defaults' in full_config and dataset_name in full_config['dataset_defaults']:
-                self.config.update(full_config['dataset_defaults'][dataset_name])
+        # Set up transforms based on dataset
+        if self.dataset_name == 'gtsrb':
+            transform = transforms.Compose([
+                transforms.Resize((32, 32)),  # Resize all images to 32x32
+                transforms.ToTensor(),
+                transforms.Normalize((0.3337, 0.3064, 0.3171), (0.2672, 0.2564, 0.2629))
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
             
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-
-        # Get datasets with transforms
-        train_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4) if self.config.get('random_crop', True) else transforms.Lambda(lambda x: x),
-            transforms.RandomHorizontalFlip() if self.config.get('random_horizontal_flip', True) else transforms.Lambda(lambda x: x),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) if self.config.get('normalize', True) else transforms.Lambda(lambda x: x),
-            transforms.RandomErasing(p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=0) if self.config.get('cutout', True) else transforms.Lambda(lambda x: x)
-        ])
-        
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) if self.config.get('normalize', True) else transforms.Lambda(lambda x: x)
-        ])
-
+        # Load dataset
         self.train_dataset = get_dataset(
-            dataset_name, 
+            dataset_name,
             train=True,
-            transform=train_transform
+            transform=transform
         )
         self.test_dataset = get_dataset(
             dataset_name,
             train=False,
-            transform=test_transform
+            transform=transform
         )
 
         # Create data loaders
         self.train_loader = DataLoader(
             self.train_dataset,
-            batch_size=self.config['batch_size'],
+            batch_size=128,
             shuffle=True,
-            num_workers=self.config['num_workers'],
-            pin_memory=self.config.get('pin_memory', True),
-            persistent_workers=True if self.config['num_workers'] > 0 else False,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
         )
         self.test_loader = DataLoader(
             self.test_dataset,
-            batch_size=self.config['batch_size'],
+            batch_size=128,
             shuffle=False,
-            num_workers=self.config['num_workers'],
-            pin_memory=self.config.get('pin_memory', True),
-            persistent_workers=True if self.config['num_workers'] > 0 else False,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
         )
 
         # Create model
@@ -405,7 +370,7 @@ class PoisonExperiment:
                 'val_loss': val_loss,
                 'val_acc': val_acc,
             },
-            'config': self.config,
+            'config': {},
         }
         
         if is_final:
@@ -430,16 +395,16 @@ class PoisonExperiment:
         # Create optimizer
         optimizer = optim.SGD(
             self.model.parameters(),
-            lr=self.config['learning_rate'],
-            momentum=self.config['momentum'],
-            weight_decay=self.config['weight_decay']
+            lr=0.1,
+            momentum=0.9,
+            weight_decay=0.0005
         )
         
         # Create scheduler
         scheduler = optim.lr_scheduler.MultiStepLR(
             optimizer,
-            milestones=self.config.get('lr_schedule', [60, 120, 160]),
-            gamma=self.config.get('lr_factor', 0.2)
+            milestones=[60, 120, 160],
+            gamma=0.2
         )
         
         checkpoint = load_checkpoint(
@@ -535,8 +500,8 @@ class PoisonExperiment:
         result = PoisonResult(
             config=self.configs[0],
             dataset_name=self.dataset_name,
-            poisoned_indices=self.poisoned_indices,
-            poison_success_rate=self.poison_success_rate,
+            poisoned_indices=[],
+            poison_success_rate=0.0,
             original_accuracy=clean_accuracy,
             poisoned_accuracy=poisoned_accuracy
         )
@@ -550,7 +515,7 @@ class PoisonExperiment:
             self.test_dataset,
             self.dataset_name,
             poison_config=None,
-            subset_size=self.configs[0].data.subset_size if self.configs and hasattr(self.configs[0].data, 'subset_size') else None
+            subset_size=None
         )
         results = traditional_results
 
