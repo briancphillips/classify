@@ -77,8 +77,14 @@ class GradientAscentAttack(PoisonAttack):
         num_batches = (len(indices_to_poison) + batch_size - 1) // batch_size
         
         # Create progress bar for poisoned samples only
-        total_steps = self.config.ga_steps * self.config.ga_iterations  # Total steps per batch
-        pbar = tqdm(total=total_steps * num_batches, desc="Poisoning steps")
+        steps_per_batch = self.config.ga_steps  # Steps per iteration
+        total_steps = steps_per_batch * self.config.ga_iterations  # Total steps for all iterations
+        
+        logger.info(f"Debug - Batch size: {batch_size}, Num batches: {num_batches}")
+        logger.info(f"Debug - Steps per iteration: {steps_per_batch}, Iterations: {self.config.ga_iterations}")
+        logger.info(f"Debug - Total steps: {total_steps}")
+        
+        pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
         # Process samples in batches
         for batch_start in range(0, len(indices_to_poison), batch_size):
