@@ -177,25 +177,26 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=None):
 
 def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, dataset_name, poison_config=None, subset_size=None):
     """Evaluate traditional classifiers on clean or poisoned data."""
-    # Initialize model and move to appropriate device
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Get appropriate model architecture
     model = get_model(dataset_name).to(device)
     
-    # If subset_size is specified, take a subset of the data
-    if subset_size is not None:
-        if len(train_dataset) > subset_size:
-            indices = torch.randperm(len(train_dataset))[:subset_size]
-            train_dataset = torch.utils.data.Subset(train_dataset, indices)
-            logger.info(f"Using subset of {subset_size} training samples")
+    # Extract features using CNN
+    train_features, train_labels = extract_features_and_labels(train_dataset, model, device)
+    test_features, test_labels = extract_features_and_labels(test_dataset, model, device)
     
-    # Extract CNN features and labels
-    X_train, y_train = extract_features_and_labels(train_dataset, model, device)
-    X_test, y_test = extract_features_and_labels(test_dataset, model, device)
-
+    # If subset size specified, limit training data
+    if subset_size is not None:
+        logger.info(f"Using {subset_size} samples for training")
+        indices = np.random.choice(len(train_features), size=subset_size, replace=False)
+        train_features = train_features[indices]
+        train_labels = train_labels[indices]
+    
     # Scale features
     scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+    X_train = scaler.fit_transform(train_features)
+    X_test = scaler.transform(test_features)
 
     # Apply PCA for dimensionality reduction
     n_components = min(X_train.shape[0], X_train.shape[1], 512)  # Cap at min(n_samples, n_features, 512)
@@ -210,7 +211,7 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
     # Initialize classifiers with optimized hyperparameters
     classifiers = {
         "KNN": KNeighborsClassifier(
-            n_neighbors=min(30, len(y_train) // 50),  # Adjusted scaling
+            n_neighbors=min(30, len(train_labels) // 50),  # Adjusted scaling
             weights='distance',
             metric='cosine',  # Changed to cosine similarity
             n_jobs=-1
@@ -238,7 +239,7 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
         start_time = time.time()
         
         # Train classifier
-        clf.fit(X_train, y_train)
+        clf.fit(X_train, train_labels)
         training_time = time.time() - start_time
         
         # Get predictions
@@ -247,15 +248,15 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
         inference_time = time.time() - start_time
         
         # Calculate metrics
-        accuracy = accuracy_score(y_test, y_pred)
+        accuracy = accuracy_score(test_labels, y_pred)
         
         # Get per-class accuracies
-        unique_classes = np.unique(y_test)
+        unique_classes = np.unique(test_labels)
         class_accuracies = [0.0] * num_classes  # Initialize with correct number of classes
         for cls in unique_classes:
-            mask = y_test == cls
+            mask = test_labels == cls
             if np.any(mask):
-                cls_acc = accuracy_score(y_test[mask], y_pred[mask])
+                cls_acc = accuracy_score(test_labels[mask], y_pred[mask])
                 class_accuracies[cls] = cls_acc
 
         # Create result dict in format compatible with CSV export
