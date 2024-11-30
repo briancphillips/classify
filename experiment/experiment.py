@@ -7,7 +7,7 @@ from typing import List, Optional, Any, Dict
 from tqdm import tqdm
 import numpy as np
 import time
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.optim.swa_utils import AveragedModel, SWALR
 from config.dataclasses import PoisonConfig, PoisonResult
@@ -42,7 +42,7 @@ class Trainer:
         self.label_smoothing = config.get('label_smoothing', 0.1) if not self.use_mixup else 0.0
         
         # Setup mixed precision training
-        self.scaler = GradScaler() if self.use_amp else None
+        self.scaler = GradScaler('cuda') if self.use_amp else None
         
         # Gradient clipping value
         self.grad_clip = config.get('grad_clip', 1.0)
@@ -126,7 +126,7 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
                 
                 # Forward pass with autocast
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                with autocast('cuda', enabled=self.use_amp):
                     # Mixup
                     if self.use_mixup:
                         inputs, targets_a, targets_b, lam = self.mixup_data(inputs, targets)
@@ -208,7 +208,7 @@ class Trainer:
         # Track initial memory usage
         self.track_memory_usage()
         
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.use_amp):
+        with torch.no_grad(), autocast('cuda', enabled=self.use_amp):
             for batch_idx, (inputs, targets) in enumerate(loader, 1):
                 # Move to device and get batch size
                 inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
@@ -463,6 +463,15 @@ class PoisonExperiment:
     def _train_model(self):
         """Train clean neural network model."""
         logger.info("Training clean neural network model...")
+        
+        # Check for existing best checkpoint first
+        checkpoint_path = os.path.join(self.checkpoint_dir, "model_best.pt")
+        if os.path.exists(checkpoint_path):
+            logger.info(f"Loading existing best model from {checkpoint_path}")
+            checkpoint = self._load_checkpoint(checkpoint_path)
+            logger.info("Successfully loaded pre-trained model")
+            return
+            
         start_time = time.time()
 
         # Create criterion, optimizer and scheduler
