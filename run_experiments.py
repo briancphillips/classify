@@ -183,24 +183,22 @@ class ExperimentManager:
                     
                     try:
                         from poison import run_poison_experiment
+                        from config.defaults import get_poison_config
                         
-                        # Prepare experiment parameters
+                        # Start with base parameters
                         params = {
                             'dataset': dataset,
                             'attack': attack,
-                            'output_dir': str(self.results_dir),
-                            'poison_ratio': 0.1,  # Default value
-                            'batch_size': 32,     # Default value
-                            'seed': 0             # Default value
+                            'output_dir': str(self.results_dir)
                         }
                         
-                        # Add poison config parameters if present
+                        # Get default poison config for this attack type
+                        poison_defaults = get_poison_config(attack)
+                        params.update(poison_defaults)
+                        
+                        # Override with experiment-specific poison config if present
                         if 'poison_config' in experiment:
-                            poison_config = experiment['poison_config']
-                            params.update({
-                                'poison_ratio': poison_config.get('poison_ratio', params['poison_ratio']),
-                                'batch_size': poison_config.get('batch_size', params['batch_size'])
-                            })
+                            params.update(experiment['poison_config'])
                         
                         # Add optional parameters if present
                         if 'subset_size' in experiment:
