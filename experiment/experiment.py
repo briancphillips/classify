@@ -584,7 +584,12 @@ class PoisonExperiment:
             poison_type=poison_config.poison_type,
             model=self.model,
             dataset=self.train_dataset,
-            **poison_config.attack_params
+            poison_ratio=poison_config.poison_ratio,
+            batch_size=poison_config.batch_size,
+            pgd_eps=poison_config.pgd_eps,
+            pgd_alpha=poison_config.pgd_alpha,
+            pgd_steps=poison_config.pgd_steps,
+            device=self.device
         )
         self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
@@ -595,7 +600,12 @@ class PoisonExperiment:
             poison_type=poison_config.poison_type,
             model=self.model,
             dataset=self.train_dataset,
-            **poison_config.attack_params
+            poison_ratio=poison_config.poison_ratio,
+            batch_size=poison_config.batch_size,
+            ga_steps=poison_config.ga_steps,
+            ga_iterations=poison_config.ga_iterations,
+            ga_lr=poison_config.ga_lr,
+            device=self.device
         )
         self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
@@ -606,7 +616,11 @@ class PoisonExperiment:
             poison_type=poison_config.poison_type,
             model=self.model,
             dataset=self.train_dataset,
-            **poison_config.attack_params
+            poison_ratio=poison_config.poison_ratio,
+            batch_size=poison_config.batch_size,
+            source_class=poison_config.source_class,
+            target_class=poison_config.target_class,
+            device=self.device
         )
         self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
