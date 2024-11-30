@@ -91,7 +91,7 @@ class GradientAscentAttack(PoisonAttack):
                 data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
             
             data = data.to(self.device)
-            target = target.to(self.device)
+            target = torch.tensor(target, device=self.device)  # Convert target to tensor and move to device
 
             # Normalize to [0,1] range if needed
             if data.dtype == torch.uint8:
@@ -192,7 +192,7 @@ class GradientAscentAttack(PoisonAttack):
                 inputs = inputs.to(self.device)
                 if inputs.dtype == torch.uint8:
                     inputs = inputs.float() / 255.0
-                targets = targets.to(self.device)
+                targets = torch.tensor(targets, device=self.device)  # Convert target to tensor and move to device
 
                 # Get predictions
                 outputs = self.model(inputs)
