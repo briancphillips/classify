@@ -24,8 +24,8 @@ class PoisonConfig:
     pgd_alpha: Optional[float] = 0.01  # Step size for PGD attack
     pgd_steps: Optional[int] = 40  # Number of steps for PGD attack
     # Gradient Ascent attack parameters
-    ga_steps: Optional[int] = 50  # Number of gradient steps per iteration
-    ga_iterations: Optional[int] = 100  # Number of outer iterations
+    ga_steps: Optional[int] = 10  # Number of gradient steps per iteration
+    ga_iterations: Optional[int] = 20  # Number of outer iterations
     ga_lr: Optional[float] = 0.1  # Learning rate for gradient ascent
     # Attack targeting parameters
     source_class: Optional[int] = None  # Source class for targeted attacks
