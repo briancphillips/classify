@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import os
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from tqdm import tqdm
 import numpy as np
 from torch.cuda.amp import autocast, GradScaler
