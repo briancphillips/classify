@@ -5,6 +5,7 @@ from run_experiments import ExperimentManager
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
 from multiprocessing import freeze_support
+from notebook_config import deep_update
 
 # Initialize logging
 setup_logging()
