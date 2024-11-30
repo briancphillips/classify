@@ -188,6 +188,7 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
     
     # If subset size specified, limit training data
     if subset_size is not None:
+        subset_size = min(subset_size, len(train_features))  # Don't take more than available
         logger.info(f"Using {subset_size} samples for training")
         indices = np.random.choice(len(train_features), size=subset_size, replace=False)
         train_features = train_features[indices]
