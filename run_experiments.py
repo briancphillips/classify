@@ -211,19 +211,9 @@ class ExperimentManager:
                         # Add supported parameters to base_params
                         params = {
                             **base_params,
-                            'poison_ratio': poison_config.poison_ratio,
-                            'batch_size': poison_config.batch_size
+                            'poison_config': poison_config,  # Pass the entire config object
+                            'subset_size': experiment.get('subset_size')
                         }
-                        
-                        # Add optional parameters if present
-                        if 'subset_size' in experiment:
-                            params['subset_size'] = experiment['subset_size']
-                        if poison_config.target_class is not None:
-                            params['target_class'] = poison_config.target_class
-                        if poison_config.source_class is not None:
-                            params['source_class'] = poison_config.source_class
-                        if poison_config.random_seed is not None:
-                            params['seed'] = poison_config.random_seed
                         
                         logger.info(f"Running experiment with params: {params}")
                         
