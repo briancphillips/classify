@@ -170,7 +170,7 @@ def evaluate_traditional_classifiers(dataset_name, subset_size=None):
         }
         
         all_results.append(result)
-        logger.info(f"{name} accuracy: {accuracy:.4f} (train time: {training_time:.2f}s, inference time: {inference_time:.2f}s)")
+        logger.info(f"{name} accuracy: {accuracy*100:.2f}% (train time: {training_time:.2f}s, inference time: {inference_time:.2f}s)")
 
     return all_results
 
@@ -278,7 +278,7 @@ def evaluate_traditional_classifiers_on_poisoned(train_dataset, test_dataset, da
         }
         
         all_results.append(result)
-        logger.info(f"{name} accuracy: {accuracy:.4f}")
+        logger.info(f"{name} accuracy: {accuracy*100:.2f}% (train time: {training_time:.2f}s, inference time: {inference_time:.2f}s)")
 
     return all_results
 
