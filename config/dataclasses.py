@@ -32,6 +32,16 @@ class PoisonConfig:
     target_class: Optional[int] = None  # Target class for targeted attacks
     random_seed: Optional[int] = 42  # Random seed for reproducibility
 
+    def __post_init__(self):
+        # Convert string to PoisonType enum if needed
+        if isinstance(self.poison_type, str):
+            for poison_type in PoisonType:
+                if poison_type.value == self.poison_type:
+                    self.poison_type = poison_type
+                    break
+            else:
+                raise ValueError(f"Invalid poison type: {self.poison_type}")
+
 
 @dataclass
 class PoisonResult:
@@ -55,10 +65,13 @@ class PoisonResult:
         else:
             poison_config = self.config
 
+        # Convert PoisonType enum to string if needed
+        poison_type_str = poison_config.poison_type.value if isinstance(poison_config.poison_type, PoisonType) else poison_config.poison_type
+
         return {
             "dataset_name": self.dataset_name,
             "config": {
-                "poison_type": poison_config.poison_type.value,
+                "poison_type": poison_type_str,
                 "poison_ratio": poison_config.poison_ratio,
                 "batch_size": poison_config.batch_size,
                 "pgd_eps": poison_config.pgd_eps,
