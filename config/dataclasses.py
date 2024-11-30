@@ -15,6 +15,7 @@ class PoisonConfig:
 
     poison_type: PoisonType
     poison_ratio: float  # Percentage of dataset to poison (0.0 to 1.0)
+    batch_size: Optional[int] = 32  # Batch size for poisoning attacks
     # PGD attack parameters
     pgd_eps: Optional[float] = 0.3  # Epsilon for PGD attack
     pgd_alpha: Optional[float] = 0.01  # Step size for PGD attack
@@ -51,6 +52,7 @@ class PoisonResult:
             "config": {
                 "poison_type": self.config.poison_type.value,
                 "poison_ratio": self.config.poison_ratio,
+                "batch_size": self.config.batch_size,
                 "pgd_eps": self.config.pgd_eps,
                 "pgd_alpha": self.config.pgd_alpha,
                 "pgd_steps": self.config.pgd_steps,
