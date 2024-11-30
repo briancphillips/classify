@@ -131,11 +131,13 @@ class ExperimentManager:
             
             # Get poison config from experiment
             poison_config = experiment.get("poison_config", {})
+            logger.info(f"Raw experiment config: {experiment}")
+            logger.info(f"Extracted poison_config: {poison_config}")
+            
             poison_ratio = poison_config.get("poison_ratio", 0.1)
             batch_size = poison_config.get("batch_size", 32)
             
-            logger.info(f"Experiment poison config: {poison_config}")
-            logger.info(f"Using poison_ratio={poison_ratio}, batch_size={batch_size}")
+            logger.info(f"Final config values: poison_ratio={poison_ratio}, batch_size={batch_size}")
             
             results = run_poison_experiment(
                 dataset=experiment["dataset"],

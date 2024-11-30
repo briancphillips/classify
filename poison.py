@@ -87,25 +87,22 @@ def run_poison_experiment(
     seed: int = 0,
     batch_size: int = 32
 ) -> Dict[str, Any]:
-    """Run a poisoning experiment with the given parameters.
-    
-    Args:
-        dataset: Name of dataset to use
-        attack: Type of poisoning attack
-        output_dir: Directory to save results
-        poison_ratio: Ratio of training data to poison
-        subset_size: Optional size of dataset subset to use
-        target_class: Optional target class for targeted attacks
-        source_class: Optional source class for targeted attacks
-        seed: Random seed for reproducibility
-        batch_size: Batch size for data loading and poisoning (default: 32)
-        
-    Returns:
-        Dict containing experiment results
-    """
+    """Run a poisoning experiment with the given parameters."""
     # Set random seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
+    
+    logger.info(f"Starting poison experiment with params:")
+    logger.info(f"  - dataset: {dataset}")
+    logger.info(f"  - attack: {attack}")
+    logger.info(f"  - poison_ratio: {poison_ratio}")
+    logger.info(f"  - batch_size: {batch_size}")
+    logger.info(f"  - subset_size: {subset_size}")
+    if target_class is not None:
+        logger.info(f"  - target_class: {target_class}")
+    if source_class is not None:
+        logger.info(f"  - source_class: {source_class}")
+    logger.info(f"  - seed: {seed}")
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
