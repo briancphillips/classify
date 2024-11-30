@@ -66,49 +66,55 @@ class GradientAscentAttack(PoisonAttack):
         # Randomly select indices to poison
         indices_to_poison = np.random.choice(num_samples, size=num_poison, replace=False)
         indices_to_poison = sorted(indices_to_poison)  # Sort for sequential access
-        
+
         # Track poisoning success
         poison_success = 0
         total_poisoned = 0
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        total_steps = num_poison * self.config.ga_steps * self.config.ga_iterations
+        total_steps = self.config.ga_steps * self.config.ga_iterations
         pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
-        # Perform gradient ascent attack on selected samples
-        for idx in indices_to_poison:
-            # Get sample from dataset
-            data, target = dataset[idx]
+        # Process samples in batches
+        batch_size = 32  # Can be adjusted based on GPU memory
+        for batch_start in range(0, len(indices_to_poison), batch_size):
+            batch_indices = indices_to_poison[batch_start:batch_start + batch_size]
+            batch_data = []
+            batch_targets = []
             
-            # Move data to device and ensure proper dimensions
-            if not isinstance(data, torch.Tensor):
-                data = transforms.ToTensor()(data)
+            # Collect batch data
+            for idx in batch_indices:
+                data, target = dataset[idx]
+                if not isinstance(data, torch.Tensor):
+                    data = transforms.ToTensor()(data)
+                
+                # Ensure we have a 4D tensor [B, C, H, W]
+                if len(data.shape) == 3:  # [C, H, W]
+                    data = data.unsqueeze(0)  # Add batch dimension -> [1, C, H, W]
+                elif len(data.shape) == 5:  # [1, 1, C, H, W]
+                    data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
+                
+                # Normalize to [0,1] range if needed
+                if data.dtype == torch.uint8:
+                    data = data.float() / 255.0
+                
+                batch_data.append(data)
+                batch_targets.append(target)
             
-            # Ensure we have a 4D tensor [B, C, H, W]
-            if len(data.shape) == 3:  # [C, H, W]
-                data = data.unsqueeze(0)  # Add batch dimension -> [1, C, H, W]
-            elif len(data.shape) == 5:  # [1, 1, C, H, W]
-                data = data.squeeze(1)  # Remove extra dimension -> [1, C, H, W]
+            # Stack batch data
+            batch_data = torch.cat(batch_data, dim=0).to(self.device)
+            batch_targets = torch.tensor(batch_targets, device=self.device)
             
-            data = data.to(self.device)
-            target = torch.tensor(target, device=self.device)
-
-            # Normalize to [0,1] range if needed
-            if data.dtype == torch.uint8:
-                data = data.float() / 255.0
-
             # Initialize perturbed data
-            perturbed_data = data.clone().detach()
+            perturbed_data = batch_data.clone().detach()
             
-            # Total number of steps (combining both loops)
-            total_optimization_steps = self.config.ga_steps * self.config.ga_iterations
-            
-            # Single optimization loop
-            for _ in range(total_optimization_steps):
+            # Single optimization loop for the entire batch
+            for _ in range(total_steps):
                 perturbed_data.requires_grad = True
                 output = self.model(perturbed_data)
-                loss = F.cross_entropy(output, self.model(data).argmax(dim=1))
+                original_preds = self.model(batch_data).argmax(dim=1)
+                loss = F.cross_entropy(output, original_preds)
                 loss.backward()
                 
                 # Update perturbed data
@@ -121,28 +127,30 @@ class GradientAscentAttack(PoisonAttack):
                 
                 pbar.update(1)
 
-            # Check if poisoning was successful
+            # Check poisoning success for each sample in batch
             with torch.no_grad():
                 output = self.model(perturbed_data)
-                pred = output.argmax(dim=1)
-                if pred != target:
-                    poison_success += 1
+                preds = output.argmax(dim=1)
+                poison_success += (preds != batch_targets).sum().item()
 
-            # Convert back to uint8 and correct format
-            perturbed_data = (perturbed_data * 255).byte()
-            perturbed_data = perturbed_data.squeeze(0)
-            perturbed_data = perturbed_data.permute(1, 2, 0)
+            # Convert back to uint8 and correct format for each sample
+            perturbed_data = (perturbed_data * 255).byte()  # [B, C, H, W]
+            
+            # Update dataset with poisoned samples
+            for i, idx in enumerate(batch_indices):
+                # Get individual sample and reshape
+                sample = perturbed_data[i].squeeze(0)  # [C, H, W]
+                sample = sample.permute(1, 2, 0)  # [H, W, C]
+                
+                if isinstance(dataset, torch.utils.data.dataset.Subset):
+                    poisoned_dataset.dataset.data[dataset.indices[idx]] = sample.cpu().numpy()
+                else:
+                    poisoned_dataset.data[idx] = sample.cpu().numpy()
+                
+                poisoned_indices.append(idx)
+                total_poisoned += 1
 
-            # Update the dataset with poisoned sample
-            if isinstance(dataset, torch.utils.data.dataset.Subset):
-                poisoned_dataset.dataset.data[dataset.indices[idx]] = perturbed_data.cpu().numpy()
-            else:
-                poisoned_dataset.data[idx] = perturbed_data.cpu().numpy()
-
-            poisoned_indices.append(idx)
-            total_poisoned += 1
-
-        # Clear GPU memory once after all samples
+        # Clear GPU memory once after all batches
         clear_memory()
 
         # Calculate success rate
