@@ -464,7 +464,15 @@ class PoisonExperiment:
         """Train clean neural network model."""
         logger.info("Training clean neural network model...")
         
-        # Check for existing best checkpoint first
+        # Check for existing best checkpoint in the workspace checkpoint directory
+        workspace_checkpoint = "/workspace/classify/checkpoints/wideresnet/wideresnet_best.pt"
+        if os.path.exists(workspace_checkpoint):
+            logger.info(f"Loading existing best model from {workspace_checkpoint}")
+            checkpoint = self._load_checkpoint(workspace_checkpoint)
+            logger.info("Successfully loaded pre-trained model")
+            return
+            
+        # Fallback to local checkpoint directory
         checkpoint_path = os.path.join(self.checkpoint_dir, "model_best.pt")
         if os.path.exists(checkpoint_path):
             logger.info(f"Loading existing best model from {checkpoint_path}")
