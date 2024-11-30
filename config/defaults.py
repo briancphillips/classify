@@ -61,6 +61,7 @@ DATASET_DEFAULTS = {
 # Poisoning attack defaults
 POISON_DEFAULTS = {
     "poison_ratio": 0.1,  # Percentage of dataset to poison
+    "batch_size": 32,  # Batch size for poisoning attacks
     # PGD attack parameters
     "pgd_eps": 0.3,
     "pgd_alpha": 0.01,
@@ -103,7 +104,7 @@ def get_poison_config(poison_type: str = None) -> Dict[str, Any]:
     """
     config = POISON_DEFAULTS.copy()
     if poison_type == "pgd":
-        return {k: v for k, v in config.items() if k.startswith("pgd_") or k == "poison_ratio"}
+        return {k: v for k, v in config.items() if k.startswith("pgd_") or k == "poison_ratio" or k == "batch_size"}
     elif poison_type == "gradient_ascent":
-        return {k: v for k, v in config.items() if k.startswith("ga_") or k == "poison_ratio"}
+        return {k: v for k, v in config.items() if k.startswith("ga_") or k == "poison_ratio" or k == "batch_size"}
     return config

@@ -49,12 +49,12 @@ class PGDPoisonAttack(PoisonAttack):
         poisoned_indices = []
 
         # Process samples in batches
-        batch_size = 32  # Can be adjusted based on GPU memory
+        batch_size = self.config.batch_size  # Get batch size from config
         num_batches = (len(indices_to_poison) + batch_size - 1) // batch_size
         
         # Create progress bar for poisoned samples only
         steps_per_batch = self.config.pgd_steps  # Steps per iteration
-        total_steps = steps_per_batch * self.config.pgd_iterations  # Total steps for all iterations
+        total_steps = steps_per_batch * self.config.pgd_iterations * num_batches  # Total steps across all batches
         
         logger.info(f"Debug - Batch size: {batch_size}, Num batches: {num_batches}")
         logger.info(f"Debug - Steps per iteration: {steps_per_batch}, Iterations: {self.config.pgd_iterations}")
