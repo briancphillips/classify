@@ -462,6 +462,22 @@ class PoisonExperiment:
         # If no checkpoint was loaded, continue with original training code
         start_time = time.time()
 
+    def _apply_gradient_ascent_attack(self, poison_config: PoisonConfig):
+        """Apply gradient ascent attack to create poisoned dataset."""
+        logger.info("Applying gradient ascent attack...")
+        attack = create_poison_attack(
+            poison_type=poison_config.poison_type,
+            model=self.model,
+            dataset=self.train_dataset,
+            poison_ratio=poison_config.poison_ratio,
+            batch_size=poison_config.batch_size,
+            ga_steps=poison_config.ga_steps,
+            ga_iterations=poison_config.ga_iterations,
+            ga_lr=poison_config.ga_lr,
+            device=self.device
+        )
+        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
+
     def run(self):
         """Run the poisoning experiment."""
         logger.info("Starting poisoning experiment")
