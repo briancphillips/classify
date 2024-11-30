@@ -24,6 +24,7 @@ from attacks.gradient_ascent import GradientAscentAttack
 from attacks.label_flip import LabelFlipAttack
 from config.dataclasses import PoisonConfig
 from config.types import PoisonType
+from config.defaults import get_dataset_config
 
 # Initialize logging
 setup_logging()
