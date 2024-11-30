@@ -60,7 +60,7 @@ DATASET_DEFAULTS = {
 
 # Poisoning attack defaults
 POISON_DEFAULTS = {
-    "poison_ratio": 0.1,  # Percentage of dataset to poison
+    "poison_ratio": 0.005,  # 0.5% of dataset to poison by default
     # PGD attack parameters
     "pgd_eps": 0.3,
     "pgd_alpha": 0.01,
