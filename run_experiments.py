@@ -128,11 +128,18 @@ class ExperimentManager:
             
             # Run experiment using function interface
             from poison import run_poison_experiment
+            
+            # Get poison config from experiment
+            poison_config = experiment.get("poison_config", {})
+            poison_ratio = poison_config.get("poison_ratio", 0.1)
+            batch_size = poison_config.get("batch_size", 32)
+            
             results = run_poison_experiment(
                 dataset=experiment["dataset"],
                 attack=attack,
                 output_dir=str(self.results_dir),
-                poison_ratio=experiment.get("poison_ratio", 0.1)
+                poison_ratio=poison_ratio,
+                batch_size=batch_size
             )
             
             # Log results
