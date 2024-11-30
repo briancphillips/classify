@@ -21,17 +21,17 @@ def main():
         'dataset_overrides': {
             'cifar100': {
                 'epochs': 2,  # Run fewer epochs for debugging
-                'batch_size': 128,  # Smaller batch size
+                'batch_size': 128,  # Training batch size
                 'subset_size': 100  # Use only 100 samples
             },
             'gtsrb': {
                 'epochs': 2,  # Run fewer epochs for debugging
-                'batch_size': 128,  # Smaller batch size
+                'batch_size': 128,  # Training batch size
                 'subset_size': 100  # Use only 100 samples
             },
             'imagenette': {
                 'epochs': 2,  # Run fewer epochs for debugging
-                'batch_size': 64,  # Smaller batch size
+                'batch_size': 128,  # Training batch size
                 'subset_size': 100  # Use only 100 samples
             }
         },
@@ -44,6 +44,10 @@ def main():
         'execution': {
             'max_workers': 1,  # Run sequentially
             'device': 'gpu'
+        },
+        'poison_overrides': {
+            'batch_size': 32,  # Poisoning attack batch size (smaller for more frequent updates)
+            'poison_ratio': 0.005  # Small poison ratio for debugging
         },
         'experiment_groups': {
             'basic_comparison': {

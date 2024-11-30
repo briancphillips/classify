@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Tuple, Optional
 import matplotlib.pyplot as plt
 from IPython import display
 import sys
+import numpy as np
 
 from utils.logging import setup_logging, get_logger
 from utils.error_logging import get_error_logger
@@ -29,16 +30,22 @@ setup_logging()
 logger = get_logger(__name__)
 error_logger = get_error_logger()
 
-def get_loaders(dataset: str, subset_size: Optional[int] = None) -> Tuple[DataLoader, DataLoader]:
+def get_loaders(dataset: str, subset_size: Optional[int] = None, batch_size: Optional[int] = None) -> Tuple[DataLoader, DataLoader]:
     """Get train and test data loaders for a dataset.
     
     Args:
         dataset: Name of dataset ('cifar100', 'gtsrb', 'imagenette')
         subset_size: Optional size of dataset subset to use
+        batch_size: Optional batch size override. If not provided, uses dataset config batch_size
         
     Returns:
         Tuple[DataLoader, DataLoader]: Train and test data loaders
     """
+    # Get dataset config for default batch size
+    config = get_dataset_config(dataset)
+    if batch_size is None:
+        batch_size = config['batch_size']
+    
     # Get datasets
     train_dataset = get_dataset(dataset, train=True, subset_size=subset_size)
     test_dataset = get_dataset(dataset, train=False, subset_size=subset_size)
@@ -46,17 +53,18 @@ def get_loaders(dataset: str, subset_size: Optional[int] = None) -> Tuple[DataLo
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=128,
+        batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
-        pin_memory=True
+        num_workers=config['num_workers'],
+        pin_memory=config['pin_memory']
     )
+    
     test_loader = DataLoader(
         test_dataset,
-        batch_size=128,
+        batch_size=batch_size,
         shuffle=False,
-        num_workers=4,
-        pin_memory=True
+        num_workers=config['num_workers'],
+        pin_memory=config['pin_memory']
     )
     
     return train_loader, test_loader
@@ -72,10 +80,11 @@ def run_poison_experiment(
     attack: str,
     output_dir: str,
     poison_ratio: float = 0.1,
-    subset_size: int = None,
-    target_class: int = None,
-    source_class: int = None,
-    seed: int = 0
+    subset_size: Optional[int] = None,
+    target_class: Optional[int] = None,
+    source_class: Optional[int] = None,
+    seed: int = 0,
+    batch_size: int = 32
 ) -> Dict[str, Any]:
     """Run a poisoning experiment with the given parameters.
     
@@ -88,18 +97,20 @@ def run_poison_experiment(
         target_class: Optional target class for targeted attacks
         source_class: Optional source class for targeted attacks
         seed: Random seed for reproducibility
+        batch_size: Batch size for data loading and poisoning (default: 32)
         
     Returns:
         Dict containing experiment results
     """
-    # Set random seed
+    # Set random seed for reproducibility
     torch.manual_seed(seed)
+    np.random.seed(seed)
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
     # Get data loaders
-    train_loader, test_loader = get_loaders(dataset, subset_size)
+    train_loader, test_loader = get_loaders(dataset, subset_size=subset_size, batch_size=batch_size)
     
     # Create model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -165,7 +176,7 @@ def run_poison_experiment(
         # Create poisoned data loader
         poisoned_loader = DataLoader(
             poisoned_dataset,
-            batch_size=128,
+            batch_size=batch_size,
             shuffle=True,
             num_workers=4,
             pin_memory=True

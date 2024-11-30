@@ -48,16 +48,15 @@ class PGDPoisonAttack(PoisonAttack):
         total_poisoned = 0
         poisoned_indices = []
 
-        # Process samples in batches
-        batch_size = self.config.batch_size  # Get batch size from config
+        # Process samples in batches using poisoning batch size
+        batch_size = self.config.batch_size  # Get poisoning batch size from config
         num_batches = (len(indices_to_poison) + batch_size - 1) // batch_size
         
         # Create progress bar for poisoned samples only
-        steps_per_batch = self.config.pgd_steps  # Steps per iteration
-        total_steps = steps_per_batch * self.config.pgd_iterations * num_batches  # Total steps across all batches
+        total_steps = self.config.pgd_steps * num_batches  # Total steps across all batches
         
-        logger.info(f"Debug - Batch size: {batch_size}, Num batches: {num_batches}")
-        logger.info(f"Debug - Steps per iteration: {steps_per_batch}, Iterations: {self.config.pgd_iterations}")
+        logger.info(f"Debug - Poisoning batch size: {batch_size}, Num batches: {num_batches}")
+        logger.info(f"Debug - PGD steps per batch: {self.config.pgd_steps}")
         logger.info(f"Debug - Total steps: {total_steps}")
         
         pbar = tqdm(total=total_steps, desc="Poisoning steps")
@@ -148,7 +147,7 @@ class PGDPoisonAttack(PoisonAttack):
         logger.info(f"Poisoning success rate: {poison_success_rate:.2%}")
 
         # Create data loaders for evaluation with proper batch handling
-        eval_batch_size = min(128, len(dataset))
+        eval_batch_size = min(128, len(dataset))  # Use larger batch size for evaluation
         dataloader_kwargs = {
             "batch_size": eval_batch_size,
             "shuffle": False,

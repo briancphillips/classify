@@ -16,7 +16,7 @@ TRAINING_DEFAULTS = {
     "num_classes": 100,
     
     # Training parameters
-    "batch_size": 128,
+    "batch_size": 128,  # Larger batch size for efficient training
     "epochs": 200,  # Training for full 200 epochs as per WideResNet paper
     "learning_rate": 0.1,
     "momentum": 0.9,
@@ -61,7 +61,7 @@ DATASET_DEFAULTS = {
 # Poisoning attack defaults
 POISON_DEFAULTS = {
     "poison_ratio": 0.1,  # Percentage of dataset to poison
-    "batch_size": 32,  # Batch size for poisoning attacks
+    "batch_size": 32,  # Smaller batch size for more frequent updates during poisoning
     # PGD attack parameters
     "pgd_eps": 0.3,
     "pgd_alpha": 0.01,
