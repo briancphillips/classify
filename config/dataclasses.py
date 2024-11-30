@@ -50,16 +50,21 @@ class PoisonResult:
 
     def to_dict(self) -> Dict:
         """Convert result to dictionary for serialization."""
+        if isinstance(self.config, ExperimentConfig):
+            poison_config = self.config.poison
+        else:
+            poison_config = self.config
+
         return {
             "dataset_name": self.dataset_name,
             "config": {
-                "poison_type": self.config.poison_type.value,
-                "poison_ratio": self.config.poison_ratio,
-                "batch_size": self.config.batch_size,
-                "pgd_eps": self.config.pgd_eps,
-                "pgd_alpha": self.config.pgd_alpha,
-                "pgd_steps": self.config.pgd_steps,
-                "random_seed": self.config.random_seed,
+                "poison_type": poison_config.poison_type.value,
+                "poison_ratio": poison_config.poison_ratio,
+                "batch_size": poison_config.batch_size,
+                "pgd_eps": poison_config.pgd_eps,
+                "pgd_alpha": poison_config.pgd_alpha,
+                "pgd_steps": poison_config.pgd_steps,
+                "random_seed": poison_config.random_seed,
             },
             "poisoned_indices": self.poisoned_indices,
             "poison_success_rate": self.poison_success_rate,
