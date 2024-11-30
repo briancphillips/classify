@@ -18,6 +18,7 @@ class ModelConfig:
     widen_factor: int = 10
     dropout_rate: float = 0.3
     num_classes: int = 100
+    pretrained: bool = False
 
 @dataclass
 class TrainingConfig:
@@ -141,11 +142,27 @@ class ExperimentConfig:
 # Dataset-specific configurations
 DATASET_CONFIGS = {
     "cifar100": {
-        "model": {"num_classes": 100},
+        "model": {
+            "name": "wrn-28-10",
+            "depth": 28,
+            "widen_factor": 10,
+            "num_classes": 100
+        },
         "training": {"epochs": 200}
     },
     "gtsrb": {
-        "model": {"num_classes": 43, "name": "custom-cnn"},
+        "model": {
+            "name": "custom-cnn",  # GTSRB uses a custom CNN architecture
+            "num_classes": 43
+        },
+        "training": {"epochs": 100}
+    },
+    "imagenette": {
+        "model": {
+            "name": "resnet50",  # ImageNette uses ResNet50
+            "pretrained": True,
+            "num_classes": 10
+        },
         "training": {"epochs": 100}
     }
 }

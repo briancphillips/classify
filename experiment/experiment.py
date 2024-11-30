@@ -668,7 +668,7 @@ class PoisonExperiment:
                     
                     # Configuration
                     'config': {
-                        'model_type': self.config.get('model_type', 'ResNet18'),
+                        'model_type': self.config.get('model_type', 'ResNet50'),
                         'model_architecture': str(self.model),
                         'poison_type': config.poison_type.value,
                         'epochs': self.config['epochs'],
