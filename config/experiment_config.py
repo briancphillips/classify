@@ -42,6 +42,7 @@ class DataConfig:
     normalize: bool = True
     normalize_mean: List[float] = field(default_factory=lambda: [0.5071, 0.4867, 0.4408])
     normalize_std: List[float] = field(default_factory=lambda: [0.2675, 0.2565, 0.2761])
+    subset_size: Optional[int] = None
 
 @dataclass
 class CheckpointConfig:
@@ -148,14 +149,16 @@ DATASET_CONFIGS = {
             "widen_factor": 10,
             "num_classes": 100
         },
-        "training": {"epochs": 200}
+        "training": {"epochs": 200},
+        "data": {"subset_size": 50000}
     },
     "gtsrb": {
         "model": {
             "name": "custom-cnn",  # GTSRB uses a custom CNN architecture
             "num_classes": 43
         },
-        "training": {"epochs": 100}
+        "training": {"epochs": 100},
+        "data": {"subset_size": 39209}
     },
     "imagenette": {
         "model": {
@@ -163,7 +166,8 @@ DATASET_CONFIGS = {
             "pretrained": True,
             "num_classes": 10
         },
-        "training": {"epochs": 100}
+        "training": {"epochs": 100},
+        "data": {"subset_size": 9469}
     }
 }
 
