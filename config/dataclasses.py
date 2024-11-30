@@ -4,9 +4,12 @@ from datetime import datetime
 import json
 import os
 from .types import PoisonType
+from .experiment_config import ExperimentConfig
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+__all__ = ['PoisonConfig', 'PoisonResult', 'ExperimentConfig']
 
 
 @dataclass
