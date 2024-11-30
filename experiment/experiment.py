@@ -475,6 +475,24 @@ class PoisonExperiment:
             self.device
         )
         
+        # Get subset size from config if available
+        subset_size = None
+        if self.configs and isinstance(self.configs[0], ExperimentConfig):
+            if hasattr(self.configs[0], 'data') and hasattr(self.configs[0].data, 'subset_size'):
+                subset_size = self.configs[0].data.subset_size
+                logger.info(f"Using subset size of {subset_size} for traditional classifiers")
+
+        # Now evaluate clean data with traditional classifiers using trained CNN features
+        logger.info("Evaluating traditional classifiers on clean data...")
+        traditional_results = evaluate_traditional_classifiers_on_poisoned(
+            self.train_dataset,
+            self.test_dataset,
+            self.dataset_name,
+            poison_config=None,
+            subset_size=subset_size
+        )
+        results = traditional_results
+
         # Apply poisoning
         poison_config = self.configs[0].poison if isinstance(self.configs[0], ExperimentConfig) else self.configs[0]
         logger.info(f"Applying {poison_config.poison_type} poisoning")
@@ -507,17 +525,6 @@ class PoisonExperiment:
         )
         result.save(self.output_dir)
         logger.info(f"Experiment complete. Results saved to {self.output_dir}")
-
-        # Now evaluate clean data with traditional classifiers using trained CNN features
-        logger.info("Evaluating traditional classifiers on clean data...")
-        traditional_results = evaluate_traditional_classifiers_on_poisoned(
-            self.train_dataset,
-            self.test_dataset,
-            self.dataset_name,
-            poison_config=None,
-            subset_size=None
-        )
-        results = traditional_results
 
         # Run each poisoning configuration
         for config in self.configs:
