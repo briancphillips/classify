@@ -72,12 +72,14 @@ class GradientAscentAttack(PoisonAttack):
         total_poisoned = 0
         poisoned_indices = []
 
+        # Process samples in batches
+        batch_size = 32  # Can be adjusted based on GPU memory
+        
         # Create progress bar for poisoned samples only
-        total_steps = self.config.ga_steps * self.config.ga_iterations * len(indices_to_poison)
+        total_steps = self.config.ga_steps * self.config.ga_iterations * ((len(indices_to_poison) + batch_size - 1) // batch_size)
         pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
         # Process samples in batches
-        batch_size = 32  # Can be adjusted based on GPU memory
         for batch_start in range(0, len(indices_to_poison), batch_size):
             batch_indices = indices_to_poison[batch_start:batch_start + batch_size]
             batch_data = []
