@@ -297,10 +297,29 @@ class PoisonExperiment:
         with open(config_path) as f:
             full_config = yaml.safe_load(f)
         
-        # Merge configs
-        self.config = {**full_config['defaults']}
-        if dataset_name in full_config['dataset_defaults']:
-            self.config.update(full_config['dataset_defaults'][dataset_name])
+        # Initialize with default config values
+        self.config = {
+            'batch_size': 128,
+            'epochs': 200,
+            'learning_rate': 0.1,
+            'momentum': 0.9,
+            'weight_decay': 0.0005,
+            'lr_schedule': [60, 120, 160],
+            'lr_factor': 0.2,
+            'num_workers': 4,
+            'pin_memory': True,
+            'random_crop': True,
+            'random_horizontal_flip': True,
+            'normalize': True,
+            'cutout': True
+        }
+        
+        # Update with config file values if they exist
+        if full_config and isinstance(full_config, dict):
+            if 'defaults' in full_config:
+                self.config.update(full_config['defaults'])
+            if 'dataset_defaults' in full_config and dataset_name in full_config['dataset_defaults']:
+                self.config.update(full_config['dataset_defaults'][dataset_name])
             
         self.dataset_name = dataset_name
         self.configs = configs
