@@ -49,7 +49,7 @@ class PGDPoisonAttack(PoisonAttack):
         poisoned_indices = []
 
         # Create progress bar for poisoned samples only
-        total_steps = self.config.pgd_steps * self.config.pgd_iterations
+        total_steps = self.config.pgd_steps * self.config.pgd_iterations * len(indices_to_poison)
         pbar = tqdm(total=total_steps, desc="Poisoning steps")
         
         # Process samples in batches
