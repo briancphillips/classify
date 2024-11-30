@@ -12,42 +12,50 @@ import os
 import sys
 from tqdm import tqdm
 import torch
+from contextlib import contextmanager
+from utils.logging import get_logger
+from config.experiment_config import ExperimentConfig, create_config
 
-from utils.logging import setup_logging, get_logger
-from utils.error_logging import get_error_logger
-
-# Initialize logging
-setup_logging()
 logger = get_logger(__name__)
-error_logger = get_error_logger()
 
 class ExperimentManager:
+    """Manages the execution of experiments with configurations."""
+    
     def __init__(self, config_path: str):
-        self.config_path = config_path
-        self.config = self._load_config()
-        self.results_dir = Path(self.config['output']['base_dir'])
+        """Initialize the experiment manager.
+        
+        Args:
+            config_path: Path to the YAML configuration file
+        """
+        self.config_path = Path(config_path)
+        self.config = ExperimentConfig.from_yaml(config_path)
+        self._setup_device()
+        self.results_dir = Path(self.config.output.base_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.total_experiments = self._count_total_experiments()
         
+    def _setup_device(self):
+        """Setup the compute device (CPU/GPU/MPS)."""
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+            logger.info(f"Using GPU: {torch.cuda.get_device_name(0)}")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+            logger.info("Using Apple Silicon MPS")
+        else:
+            self.device = torch.device('cpu')
+            logger.info("Using CPU")
+            
     def _count_total_experiments(self) -> int:
         """Count total number of experiments to run."""
         count = 0
-        for group in self.config['experiment_groups'].values():
-            for experiment in group['experiments']:
+        for group in self.config.experiment_groups.values():
+            for experiment in group.experiments:
                 attacks = experiment.get('attacks', [experiment.get('attack')])
                 count += len(attacks)
         return count
     
-    def _get_device_info(self) -> str:
-        """Get information about available compute devices."""
-        if torch.cuda.is_available():
-            return f"GPU ({torch.cuda.get_device_name(0)})"
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            return "Apple Silicon GPU (MPS)"
-        else:
-            return "CPU"
-            
     def override_config(self, **kwargs):
         """Temporarily override config values for debugging.
         
@@ -61,13 +69,13 @@ class ExperimentManager:
         self._original_config = {}
         
         for key, value in kwargs.items():
-            if key in self.config:
-                self._original_config[key] = self.config[key]
-                if isinstance(value, dict) and isinstance(self.config[key], dict):
+            if key in self.config.to_dict():
+                self._original_config[key] = self.config.to_dict()[key]
+                if isinstance(value, dict) and isinstance(self.config.to_dict()[key], dict):
                     # Deep update for nested dicts
-                    self.config[key].update(value)
+                    self.config.to_dict()[key].update(value)
                 else:
-                    self.config[key] = value
+                    self.config.to_dict()[key] = value
             else:
                 logger.warning(f"Unknown config key: {key}")
         
@@ -88,89 +96,22 @@ class ExperimentManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.reset_config()
         
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file."""
-        with open(self.config_path) as f:
-            return yaml.safe_load(f)
-    
-    def _build_command(self, experiment: Dict[str, Any], attack: str) -> List[str]:
-        """Build command for a single experiment."""
-        # Map attack names to PoisonType values
-        attack_map = {
-            "pgd": "pgd",
-            "ga": "gradient_ascent",
-            "random": "label_flip_random_random",
-            "target": "label_flip_random_target",
-            "source": "label_flip_source_target"
-        }
-        
-        mapped_attack = attack_map.get(attack, attack)
-        cmd = [
-            "python", "poison.py",
-            "--dataset", experiment["dataset"],
-            "--attack", mapped_attack,
-            "--output-dir", str(self.results_dir),
-            "--poison-ratio", str(experiment.get("poison_ratio", 0.1))
-        ]
-        
-        logger.info(f"Built command: {' '.join(cmd)}")
-        return cmd
-    
-    def _run_single_experiment(self, experiment: Dict[str, Any], attack: str, output_file: Path) -> None:
-        """Run a single experiment."""
-        try:
-            logger.info(f"Running experiment: {experiment['name']}")
-            logger.info(f"Results will be saved to: {output_file}")
-            
-            # Create output directory
-            self.results_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Created output directory: {self.results_dir}")
-            
-            # Run experiment using function interface
-            from poison import run_poison_experiment
-            
-            # Get poison config from experiment
-            poison_config = experiment.get("poison_config", {})
-            logger.info(f"Raw experiment config: {experiment}")
-            logger.info(f"Extracted poison_config: {poison_config}")
-            
-            poison_ratio = poison_config.get("poison_ratio", 0.1)
-            batch_size = poison_config.get("batch_size", 32)
-            
-            logger.info(f"Final config values: poison_ratio={poison_ratio}, batch_size={batch_size}")
-            
-            results = run_poison_experiment(
-                dataset=experiment["dataset"],
-                attack=attack,
-                output_dir=str(self.results_dir),
-                poison_ratio=poison_ratio,
-                batch_size=batch_size
-            )
-            
-            # Log results
-            logger.info(f"Experiment completed successfully: {experiment['name']}")
-            logger.info(f"Results: {results}")
-            
-        except Exception as e:
-            logger.error(f"Experiment failed: {experiment['name']}", exc_info=True)
-            raise
-    
     def run_experiments(self):
         """Run all experiments defined in the configuration."""
         print(f"\nSystem Information:")
         print(f"Device: {'GPU (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
         
-        print(f"\nNumber of workers: {self.config['execution']['max_workers']}", flush=True)
+        print(f"\nNumber of workers: {self.config.execution.max_workers}", flush=True)
         
         # Create output directory if it doesn't exist
         os.makedirs(self.results_dir, exist_ok=True)
         
         # Run each experiment group
-        for group_name, group in self.config['experiment_groups'].items():
-            print(f"\nGroup: {group_name} - {group['description']}")
+        for group_name, group in self.config.experiment_groups.items():
+            print(f"\nGroup: {group_name} - {group.description}")
             
             # Process each experiment in the group
-            for experiment in group['experiments']:
+            for experiment in group.experiments:
                 exp_name = experiment['name']
                 dataset = experiment['dataset']
                 attacks = experiment.get('attacks', [experiment.get('attack')])
@@ -234,8 +175,8 @@ class ExperimentManager:
         print(f"Total experiments: {self.total_experiments}", flush=True)
         print(f"Successful experiments: {self.total_experiments}", flush=True)
         print(f"Failed experiments: 0", flush=True)
-        if self.config['output']['consolidated_file']:
-            print(f"Results saved to: {self.results_dir / self.config['output']['consolidated_file']}", flush=True)
+        if self.config.output.consolidated_file:
+            print(f"Results saved to: {self.results_dir / self.config.output.consolidated_file}", flush=True)
     
     def _consolidate_results(self):
         """Consolidate all experiment results into a single CSV file."""
@@ -267,13 +208,13 @@ class ExperimentManager:
             df = create_results_dataframe(results)
             
             # Save consolidated results
-            output_file = self.results_dir / self.config['output']['consolidated_file']
+            output_file = self.results_dir / self.config.output.consolidated_file
             logger.info(f"Saving consolidated results to: {output_file}")
             df.to_csv(output_file, index=False)
             logger.info("Results consolidated successfully")
             
             # Optionally remove individual result files
-            save_individual = self.config['output'].get('save_individual_results', True)
+            save_individual = self.config.output.get('save_individual_results', True)
             if not save_individual:
                 with tqdm(result_files, desc="Cleaning up individual files", unit="file", mininterval=0.1) as pbar:
                     for file in pbar:
