@@ -633,7 +633,9 @@ class PoisonExperiment:
             self._apply_pgd_attack(poison_config)
         elif poison_config.poison_type == PoisonType.GRADIENT_ASCENT:
             self._apply_gradient_ascent_attack(poison_config)
-        elif poison_config.poison_type == PoisonType.LABEL_FLIP:
+        elif poison_config.poison_type in [PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM, 
+                                         PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
+                                         PoisonType.LABEL_FLIP_SOURCE_TO_TARGET]:
             self._apply_label_flip_attack(poison_config)
             
         # Train model on poisoned data
