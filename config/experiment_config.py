@@ -63,8 +63,8 @@ class PoisonConfig:
     pgd_alpha: float = 0.01
     pgd_steps: int = 40
     # Gradient Ascent specific parameters
-    ga_steps: int = 50
-    ga_iterations: int = 100
+    ga_steps: int = 10
+    ga_iterations: int = 20
     ga_lr: float = 0.1
     # Label flip specific parameters
     source_class: Optional[int] = None
