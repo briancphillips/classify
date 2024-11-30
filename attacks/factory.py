@@ -13,32 +13,28 @@ logger = get_logger(__name__)
 
 
 def create_poison_attack(
-    poison_type: PoisonType,
-    model: torch.nn.Module,
-    dataset: Dataset,
-    **kwargs
+    config: PoisonConfig,
+    device: Optional[torch.device] = None,
 ) -> PoisonAttack:
     """Create appropriate poison attack based on config.
 
     Args:
-        poison_type: Type of poisoning attack to create
-        model: Model to use for the attack
-        dataset: Dataset to poison
-        **kwargs: Additional arguments to pass to the attack
-
+        config: Poison configuration
+        device: Device to use for the attack
+        
     Returns:
         PoisonAttack: The created attack instance
     """
-    device = kwargs.pop('device', None) or next(model.parameters()).device
-    config = PoisonConfig(poison_type=poison_type, **kwargs)
+    if isinstance(config, dict):
+        config = PoisonConfig(**config)
     
-    if poison_type == PoisonType.PGD:
-        return PGDPoisonAttack(config=config, model=model, dataset=dataset, device=device)
-    elif poison_type == PoisonType.GRADIENT_ASCENT:
-        return GradientAscentAttack(config=config, model=model, dataset=dataset, device=device)
-    elif poison_type in [PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM, 
+    if config.poison_type == PoisonType.PGD:
+        return PGDPoisonAttack(config=config, device=device)
+    elif config.poison_type == PoisonType.GRADIENT_ASCENT:
+        return GradientAscentAttack(config=config, device=device)
+    elif config.poison_type in [PoisonType.LABEL_FLIP_RANDOM_TO_RANDOM, 
                         PoisonType.LABEL_FLIP_RANDOM_TO_TARGET,
                         PoisonType.LABEL_FLIP_SOURCE_TO_TARGET]:
-        return LabelFlipAttack(config=config, model=model, dataset=dataset, device=device)
+        return LabelFlipAttack(config=config, device=device)
     else:
-        raise ValueError(f"Unknown poison type: {poison_type}")
+        raise ValueError(f"Unknown poison type: {config.poison_type}")

@@ -684,12 +684,12 @@ class PoisonExperiment:
         # Run each poisoning configuration
         for config in self.configs:
             logger.info(f"\nRunning experiment with config: {config}")
-            checkpoint_name = f"poisoned_{config.poison_type.value}"
+            checkpoint_name = f"poisoned_{config.poison.poison_type}"
             poison_start_time = time.time()
 
             try:
                 # Create attack instance
-                attack = create_poison_attack(config, self.device)
+                attack = create_poison_attack(config.poison, self.device)
                 attack.dataset_name = self.dataset_name  # Set dataset name before running attack
 
                 # Run poisoning attack
@@ -756,7 +756,7 @@ class PoisonExperiment:
                     'config': {
                         'model_type': self.config.get('model_type', 'ResNet50'),
                         'model_architecture': str(self.model),
-                        'poison_type': config.poison_type.value,
+                        'poison_type': config.poison.poison_type.value,
                         'epochs': self.config['epochs'],
                         'batch_size': self.config['batch_size'],
                         'learning_rate': self.config['learning_rate'],
