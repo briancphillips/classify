@@ -10,7 +10,7 @@ import time
 from torch.amp import autocast, GradScaler
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.optim.swa_utils import AveragedModel, SWALR
-from config.dataclasses import PoisonConfig, PoisonResult
+from config.dataclasses import PoisonConfig, PoisonResult, ExperimentConfig
 from attacks import create_poison_attack
 from models import train_model, get_model, get_dataset
 from utils.device import get_device, clear_memory
@@ -278,7 +278,7 @@ class PoisonExperiment:
     def __init__(
             self,
             dataset_name: str,
-            configs: List[PoisonConfig],
+            configs: List[ExperimentConfig],
             config_path: str = "experiments/config.yaml",
             device: Optional[torch.device] = None,
             output_dir: str = "results",
@@ -579,6 +579,39 @@ class PoisonExperiment:
         logger.info(f"Training completed in {total_time:.2f}s")
         return trainer
 
+    def _apply_pgd_attack(self, poison_config: PoisonConfig):
+        """Apply PGD attack to create poisoned dataset."""
+        logger.info("Applying PGD attack...")
+        attack = create_poison_attack(
+            poison_type=poison_config.poison_type,
+            model=self.model,
+            dataset=self.train_dataset,
+            **poison_config.attack_params
+        )
+        self.poisoned_dataset = attack.poison_dataset()
+
+    def _apply_gradient_ascent_attack(self, poison_config: PoisonConfig):
+        """Apply gradient ascent attack to create poisoned dataset."""
+        logger.info("Applying gradient ascent attack...")
+        attack = create_poison_attack(
+            poison_type=poison_config.poison_type,
+            model=self.model,
+            dataset=self.train_dataset,
+            **poison_config.attack_params
+        )
+        self.poisoned_dataset = attack.poison_dataset()
+
+    def _apply_label_flip_attack(self, poison_config: PoisonConfig):
+        """Apply label flip attack to create poisoned dataset."""
+        logger.info("Applying label flip attack...")
+        attack = create_poison_attack(
+            poison_type=poison_config.poison_type,
+            model=self.model,
+            dataset=self.train_dataset,
+            **poison_config.attack_params
+        )
+        self.poisoned_dataset = attack.poison_dataset()
+
     def run(self):
         """Run the poisoning experiment."""
         logger.info("Starting poisoning experiment")
@@ -593,13 +626,14 @@ class PoisonExperiment:
         )
         
         # Apply poisoning
-        logger.info(f"Applying {self.configs[0].poison_type} poisoning")
-        if self.configs[0].poison_type == PoisonType.PGD:
-            self._apply_pgd_attack()
-        elif self.configs[0].poison_type == PoisonType.GRADIENT_ASCENT:
-            self._apply_gradient_ascent()
-        else:
-            self._apply_label_flip()
+        poison_config = self.configs[0].poison if isinstance(self.configs[0], ExperimentConfig) else self.configs[0]
+        logger.info(f"Applying {poison_config.poison_type} poisoning")
+        if poison_config.poison_type == PoisonType.PGD:
+            self._apply_pgd_attack(poison_config)
+        elif poison_config.poison_type == PoisonType.GRADIENT_ASCENT:
+            self._apply_gradient_ascent_attack(poison_config)
+        elif poison_config.poison_type == PoisonType.LABEL_FLIP:
+            self._apply_label_flip_attack(poison_config)
             
         # Train model on poisoned data
         logger.info("Training model on poisoned data")
