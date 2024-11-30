@@ -188,9 +188,14 @@ class ExperimentManager:
                         params = {
                             'dataset': dataset,
                             'attack': attack,
-                            'output_dir': str(self.results_dir),
-                            'poison_ratio': experiment.get('poison_config', {}).get('poison_ratio', 0.1)  # Get from poison_config
+                            'output_dir': str(self.results_dir)
                         }
+                        
+                        # Add poison config parameters
+                        if 'poison_config' in experiment:
+                            poison_config = experiment['poison_config']
+                            params['poison_ratio'] = poison_config.get('poison_ratio', 0.1)
+                            params['batch_size'] = poison_config.get('batch_size', 32)
                         
                         # Add optional parameters if present
                         if 'subset_size' in experiment:
@@ -200,10 +205,7 @@ class ExperimentManager:
                         if 'source_class' in experiment:
                             params['source_class'] = experiment['source_class']
                         
-                        # Add poison config parameters
-                        if 'poison_config' in experiment:
-                            if 'batch_size' in experiment['poison_config']:
-                                params['batch_size'] = experiment['poison_config']['batch_size']
+                        logger.info(f"Running experiment with params: {params}")
                         
                         # Run the experiment
                         results = run_poison_experiment(**params)
