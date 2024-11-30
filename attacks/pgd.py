@@ -50,10 +50,11 @@ class PGDPoisonAttack(PoisonAttack):
 
         # Process samples in batches
         batch_size = 32  # Can be adjusted based on GPU memory
+        num_batches = (len(indices_to_poison) + batch_size - 1) // batch_size
         
         # Create progress bar for poisoned samples only
-        total_steps = self.config.pgd_steps * self.config.pgd_iterations * ((len(indices_to_poison) + batch_size - 1) // batch_size)
-        pbar = tqdm(total=total_steps, desc="Poisoning steps")
+        total_steps = self.config.pgd_steps * self.config.pgd_iterations  # Total steps per batch
+        pbar = tqdm(total=total_steps * num_batches, desc="Poisoning steps")
         
         # Process samples in batches
         for batch_start in range(0, len(indices_to_poison), batch_size):
