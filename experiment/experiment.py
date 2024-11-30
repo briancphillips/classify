@@ -276,6 +276,8 @@ class Trainer:
         return False
 
 class PoisonExperiment:
+    """Class for running poisoning experiments."""
+
     def __init__(
             self,
             dataset_name: str,
@@ -283,18 +285,18 @@ class PoisonExperiment:
             config_path: str = "experiments/config.yaml",
             device: Optional[torch.device] = None,
             output_dir: str = "results",
-            checkpoint_dir: str = "checkpoints",
-        ):
-        """Initialize experiment.
-
-        Args:
-            dataset_name: Name of dataset to use
-            configs: List of poisoning configurations to run
-            config_path: Path to config.yaml
-            device: Optional device to use
-            output_dir: Directory to save results
-            checkpoint_dir: Directory to save checkpoints
-        """
+            checkpoint_dir: str = "checkpoints"
+    ):
+        """Initialize experiment."""
+        self.dataset_name = dataset_name
+        self.configs = configs
+        self.config_path = config_path
+        self.device = device or get_device()
+        self.output_dir = output_dir
+        self.checkpoint_dir = checkpoint_dir
+        self.poisoned_indices = []  # Initialize as empty list
+        self.poison_success_rate = 0.0  # Initialize as 0
+        
         # Load config
         with open(config_path) as f:
             full_config = yaml.safe_load(f)
@@ -323,11 +325,6 @@ class PoisonExperiment:
             if 'dataset_defaults' in full_config and dataset_name in full_config['dataset_defaults']:
                 self.config.update(full_config['dataset_defaults'][dataset_name])
             
-        self.dataset_name = dataset_name
-        self.configs = configs
-        self.device = device if device is not None else get_device()
-        self.output_dir = os.path.join(output_dir, dataset_name)
-        self.checkpoint_dir = os.path.join(checkpoint_dir, dataset_name)
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
@@ -589,7 +586,7 @@ class PoisonExperiment:
             dataset=self.train_dataset,
             **poison_config.attack_params
         )
-        self.poisoned_dataset = attack.poison_dataset()
+        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
     def _apply_gradient_ascent_attack(self, poison_config: PoisonConfig):
         """Apply gradient ascent attack to create poisoned dataset."""
@@ -600,7 +597,7 @@ class PoisonExperiment:
             dataset=self.train_dataset,
             **poison_config.attack_params
         )
-        self.poisoned_dataset = attack.poison_dataset()
+        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
     def _apply_label_flip_attack(self, poison_config: PoisonConfig):
         """Apply label flip attack to create poisoned dataset."""
@@ -611,7 +608,7 @@ class PoisonExperiment:
             dataset=self.train_dataset,
             **poison_config.attack_params
         )
-        self.poisoned_dataset = attack.poison_dataset()
+        self.poisoned_dataset, self.poisoned_indices, self.poison_success_rate = attack.poison_dataset()
 
     def run(self):
         """Run the poisoning experiment."""
