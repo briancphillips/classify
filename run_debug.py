@@ -52,19 +52,19 @@ def main():
                     'name': 'cifar100_debug',
                     'dataset': 'cifar100',
                     'attacks': ['ga','label_flip'],
-                    'poison_ratio': 0.01  # 1% poison ratio
+                    'poison_ratio': 0.005  # 0.5% poison ratio
                 },{
                     'name': 'gtsrb_debug',
                     'dataset': 'gtsrb',
                     'attacks': ['pgd','ga','label_flip'],
-                    'poison_ratio': 0.02  # 2% poison ratio
+                    'poison_ratio': 0.005  # 0.5% poison ratio
                 },{
                     'name': 'imagenette_debug',
                     'dataset': 'imagenette',
                     'attacks': ['pgd','ga','label_flip'],
-                    'poison_ratio': 0.03  # 3% poison ratio
+                    'poison_ratio': 0.005  # 0.5% poison ratio
                 }]
-            }   
+            }
         }
     }
 

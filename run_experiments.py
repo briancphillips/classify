@@ -177,7 +177,7 @@ class ExperimentManager:
                             'dataset': dataset,
                             'attack': attack,
                             'output_dir': str(self.results_dir),
-                            'poison_ratio': 0.1
+                            'poison_ratio': experiment.get('poison_ratio', 0.1)  # Get poison_ratio from experiment config
                         }
                         
                         # Add optional parameters if present
