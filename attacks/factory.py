@@ -1,7 +1,8 @@
 import torch
 from typing import Optional
+from torch.utils.data import Dataset
 from config.types import PoisonType
-from config.dataclasses import PoisonConfig, Dataset
+from config.dataclasses import PoisonConfig
 from .base import PoisonAttack
 from .pgd import PGDPoisonAttack
 from .gradient_ascent import GradientAscentAttack
